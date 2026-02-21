@@ -1,0 +1,241 @@
+# Game Server Protocol
+
+WebSocket-based protocol for the multiplayer game server.
+
+## Connection Flow
+
+```
+Client                          Server
+  |                               |
+  |── create/join ──────────────>|  (get token)
+  |<─ created/joined ───────────|
+  |                               |
+  |── auth {token} ─────────────>|  (bind connection)
+  |<─ authenticated ────────────|
+  |<─ lobby_update ─────────────|
+  |                               |
+  |── start ────────────────────>|  (host only)
+  |<─ game_started ─────────────|
+  |<─ game_state ───────────────|  (personalized per player)
+  |                               |
+  |── action {action} ──────────>|  (game moves)
+  |<─ game_log ─────────────────|  (broadcast to all)
+  |<─ game_state ───────────────|  (personalized per player)
+```
+
+## Messages: Client → Server
+
+### `create` — Create a new game room
+```json
+{"type": "create", "game": "dragon", "name": "Alice"}
+```
+Response: `created`
+
+### `join` — Join an existing room
+```json
+{"type": "join", "room_code": "F6PYC", "name": "Bob"}
+```
+Response: `joined`
+
+### `auth` — Authenticate and bind connection to room/player
+```json
+{"type": "auth", "token": "..."}
+```
+Response: `authenticated` + `lobby_update` + (if game started) `game_state`
+
+### `reconnect` — Reconnect after disconnect (same as auth)
+```json
+{"type": "reconnect", "token": "..."}
+```
+
+### `start` — Start the game (host only)
+```json
+{"type": "start"}
+```
+Broadcasts: `game_started` + `game_state` to all players
+
+### `action` — Submit a game action
+```json
+{"type": "action", "action": {"kind": "...", ...}}
+```
+On success: broadcasts `game_log` + `game_state` to all
+On failure: sends `action_error` to the acting player only
+
+### `get_state` — Request current game state
+```json
+{"type": "get_state"}
+```
+Response: `game_state`
+
+### `chat` — Send a chat message
+```json
+{"type": "chat", "message": "Hello!"}
+```
+Broadcasts: `chat` to all players
+
+---
+
+## Messages: Server → Client
+
+### `created`
+```json
+{
+  "type": "created",
+  "room_code": "F6PYC",
+  "player_id": "p_abc123",
+  "token": "...",
+  "game": "dragon"
+}
+```
+
+### `joined`
+```json
+{
+  "type": "joined",
+  "room_code": "F6PYC",
+  "player_id": "p_def456",
+  "token": "..."
+}
+```
+
+### `authenticated`
+```json
+{
+  "type": "authenticated",
+  "room_code": "F6PYC",
+  "player_id": "p_abc123",
+  "name": "Alice",
+  "is_host": true,
+  "game_started": false
+}
+```
+
+### `lobby_update`
+```json
+{
+  "type": "lobby_update",
+  "players": [
+    {"player_id": "p_abc123", "name": "Alice", "connected": true},
+    {"player_id": "p_def456", "name": "Bob", "connected": true}
+  ],
+  "game_started": false
+}
+```
+
+### `game_started`
+```json
+{"type": "game_started", "message": "Game has begun!"}
+```
+
+### `game_state` — Personalized game view
+```json
+{
+  "type": "game_state",
+  "state": { ... },              // Full game state (with hidden info redacted)
+  "phase_info": {
+    "phase": "action",
+    "round": 0,
+    "round_display": 1,
+    "total_rounds": 12,
+    "description": "Alice is choosing an action"
+  },
+  "waiting_for": ["p_abc123"],   // Who needs to act
+  "your_turn": true              // Is it this player's turn?
+}
+```
+
+### `game_log`
+```json
+{
+  "type": "game_log",
+  "messages": ["Alice: Collected 4¥ (2 base + 2 tax collectors). Now 10¥."]
+}
+```
+
+### `action_error`
+```json
+{"type": "action_error", "message": "Not your turn"}
+```
+
+### `error`
+```json
+{"type": "error", "message": "Room not found"}
+```
+
+### `game_over`
+```json
+{"type": "game_over"}
+```
+
+---
+
+## Dragon Game Actions
+
+### Draft Phase
+```json
+{"kind": "draft_pick", "picks": ["monk", "warrior"]}
+```
+
+### Action Phase
+```json
+// Choose an action from a group
+{"kind": "choose_action", "group_index": 0, "action_id": "taxes"}
+{"kind": "choose_action", "group_index": 1, "action_id": "privilege", "privilege_size": "small"}
+
+// Confirm build placement (after choosing build)
+{"kind": "confirm_build", "placement": [
+  {"palace_index": 0, "floors": 1},
+  {"palace_index": "new", "floors": 1}
+]}
+
+// Skip action (top up to 3¥)
+{"kind": "skip_action"}
+```
+
+### Person Phase
+```json
+{
+  "kind": "play_person",
+  "card_index": 2,
+  "tile_id": "monk-young-0",
+  "palace_index": 0
+}
+
+// Replace existing person (when all palaces full)
+{
+  "kind": "play_person",
+  "card_index": 2,
+  "tile_id": "monk-young-0",
+  "palace_index": 0,
+  "replace_index": 1
+}
+
+// Release tile immediately (discard without placing)
+{
+  "kind": "play_person",
+  "card_index": 2,
+  "tile_id": "monk-young-0",
+  "release_immediately": true
+}
+```
+
+### Event Phase
+```json
+// Trigger event resolution
+{"kind": "resolve_event"}
+
+// Feed palaces during drought
+{"kind": "feed_palaces", "fed_palaces": [0, 2]}
+
+// Release a person (drought/contagion/tribute/mongols)
+{"kind": "release_person", "palace_index": 1, "person_index": 0}
+```
+
+### Scoring Phase
+```json
+// Calculate scores
+{"kind": "score"}
+
+// Advance to next round (or final scoring)
+{"kind": "next_round"}
+```
