@@ -29,6 +29,9 @@ class GameEngine(ABC):
     store it, send it over the wire, and snapshot it for reconnection.
     """
 
+    # Subclasses can override to restrict player counts.
+    player_count_range: tuple[int, int] = (2, 5)
+
     @abstractmethod
     def initial_state(self, player_ids: list[str], player_names: list[str]) -> dict:
         """

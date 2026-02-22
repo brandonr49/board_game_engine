@@ -1,0 +1,62 @@
+The aim of the game
+To win, you’ll need to plant your trees strategically, with well thought out routes, while maintaining a hand of high species value.
+
+Setup
+Arboretum consists of 80 cards, split into 10 species:
+
+For a 4 player game use all 10 species.
+For 3 players, use 8.
+For 2 players use 6 species.
+To start the game, shuffle the deck and give each player 7 cards face down, place the rest in a central draw pile.
+
+The player who last watered a plant goes first.
+
+Gameplay
+Players then take it in turns to draw 2 cards, place a card  and discard a card to your personal discard pile.
+
+Your first card is placed in front of you, subsequent cards must be placed adjacent to another one, to create your arboretum.
+
+When drawing cards, you can take from a combination of the draw pile, or the top card of any players discard piles - including your own.
+
+You may look at the first card you draw, before deciding where to take your second one from.
+
+When discarding, choose any card in your hand, including ones you drew this round and place it face up in your own discard pile.
+
+After discarding, you should have exactly 7 cards.
+
+Play continues in a clockwise order until the draw pile runs dry. The player who took the last card finishes their turn, then scoring begins.
+
+Scoring
+In Arboretum, you'll score points for creating paths of trees:
+
+A path is a line of orthogonally adjacent trees, in ascending order which starts and ends with the same species.
+The cards in between can be any species.
+Each card in the path must be a greater value than the one before, but  values do not have to be consecutive. 
+To score a path, you’ll need the highest value of that species in your hand. 
+
+Go through the scorepad, calling out the species in order, and revealing the cards of that type you have. Whoever has the highest total sum of a species in their hand, wins the right to score their single highest scoring path of that species.
+
+In the case of a tie, all tied players can score. 
+
+However, there’s a catch! If a player has a ‘1’ in their hand, that cancels out an ‘8’ of the same species in another players hand. 
+
+If you win the right to score a species that isn’t in your arboretum, you still stop others from scoring it!
+
+If no one has a certain species in their hand, everyone can score that species.
+
+When scoring a path you get:
+
+1 point for each card in the path.
+1 additional point for each card, if the path is at least 4 cards long and is ALL the same species.
+1 point if the path starts with a "1".
+2 additional points if the path ends with an "8".
+
+You can only score one path per species.
+A single card can be used for different paths of species
+Whoever scores the most points wins!
+
+That’s Arboretum.
+
+A tree-rrific little card game!
+
+Enjoy!
