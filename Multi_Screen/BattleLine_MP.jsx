@@ -367,7 +367,7 @@ function CardBack({ small }) {
 
 // ─── BOARD COMPONENTS ──────────────────────────────────────────────
 
-function FlagColumn({ flag, flagIndex, myIdx, onFlagClick, onCardClick, highlighted, isCardClickable }) {
+function FlagColumn({ flag, flagIndex, myIdx, onFlagClick, onCardClick, highlighted, isCardClickable, zoneHeight }) {
   const oppIdx = 1 - myIdx;
   const oppCards = flag.slots[oppIdx];
   const myCards = flag.slots[myIdx];
@@ -390,7 +390,7 @@ function FlagColumn({ flag, flagIndex, myIdx, onFlagClick, onCardClick, highligh
       width: 58, flexShrink: 0,
     }}>
       {/* Opponent cards (top) */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", minHeight: 300, justifyContent: "flex-end" }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", minHeight: zoneHeight, justifyContent: "flex-end" }}>
         {oppCards.map((card, ci) => {
           const clickable = isCardClickable?.(flagIndex, ci, oppIdx);
           return (
@@ -435,7 +435,7 @@ function FlagColumn({ flag, flagIndex, myIdx, onFlagClick, onCardClick, highligh
       )}
 
       {/* Your cards (bottom) */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", minHeight: 300, justifyContent: "flex-start" }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", minHeight: zoneHeight, justifyContent: "flex-start" }}>
         {myCards.map((card, ci) => {
           const clickable = isCardClickable?.(flagIndex, ci, myIdx);
           return (
@@ -461,6 +461,8 @@ function BoardDisplay({ state, myIdx, onFlagClick, onCardClick, highlightedFlags
   const opp = state.players[oppIdx];
   const me = state.players[myIdx];
   const oppHandCount = typeof opp.hand === "number" ? opp.hand : opp.hand.length;
+  const anyMud = state.flags.some(f => f.environment.includes("mud"));
+  const zoneHeight = anyMud ? 300 : 230;
 
   return (
     <div style={{ ...S.card, padding: 12 }}>
@@ -486,7 +488,8 @@ function BoardDisplay({ state, myIdx, onFlagClick, onCardClick, highlightedFlags
           <FlagColumn key={fi} flag={flag} flagIndex={fi} myIdx={myIdx}
             onFlagClick={onFlagClick} onCardClick={onCardClick}
             highlighted={highlightedFlags.has(fi)}
-            isCardClickable={isCardClickable} />
+            isCardClickable={isCardClickable}
+            zoneHeight={zoneHeight} />
         ))}
       </div>
 
