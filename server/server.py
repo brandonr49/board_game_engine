@@ -98,7 +98,8 @@ class GameServer:
             raise ValueError(f"Room {code} not found")
         if room.started:
             raise ValueError("Game already in progress")
-        if len(room.players) >= 5:
+        max_players = room.engine.player_count_range[1]
+        if len(room.players) >= max_players:
             raise ValueError("Room is full")
 
         player_id = f"p_{generate_token()[:8]}"
@@ -117,8 +118,9 @@ class GameServer:
             raise ValueError("Only the host can start the game")
         if room.started:
             raise ValueError("Game already started")
-        if len(room.players) < 2:
-            raise ValueError("Need at least 2 players")
+        min_players = room.engine.player_count_range[0]
+        if len(room.players) < min_players:
+            raise ValueError(f"Need at least {min_players} players")
 
         player_ids = list(room.players.keys())
         player_names = [room.players[pid].name for pid in player_ids]
@@ -369,9 +371,11 @@ class GameServer:
 
 async def run_server(host="0.0.0.0", port=8765):
     from server.dragon.engine import DragonEngine
+    from server.battleline.engine import BattleLineEngine
 
     server = GameServer()
     server.register_engine("dragon", DragonEngine)
+    server.register_engine("battleline", BattleLineEngine)
 
     print(f"Game server starting on ws://{host}:{port}")
     print(f"Registered games: {list(server.engines.keys())}")

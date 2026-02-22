@@ -1,0 +1,19 @@
+{
+  "name": "board-game-clients",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:dragon": "VITE_GAME=dragon vite",
+    "dev:battleline": "VITE_GAME=battleline vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.0",
+    "vite": "^6.0.0"
+  }
+}
