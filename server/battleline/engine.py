@@ -60,27 +60,30 @@ class BattleLineEngine(GameEngine):
         sub = state["sub_phase"]
 
         if phase == "play_card":
-            return self._valid_play_actions(state, player_idx)
+            actions = self._valid_play_actions(state, player_idx)
         elif phase == "claim_flags":
-            return self._valid_claim_actions(state, player_idx)
+            actions = self._valid_claim_actions(state, player_idx)
         elif phase == "draw_card":
-            return self._valid_draw_actions(state)
+            actions = self._valid_draw_actions(state)
         elif sub == "scout_draw":
-            return self._valid_scout_draw_actions(state)
+            actions = self._valid_scout_draw_actions(state)
         elif sub == "scout_return":
-            return self._valid_scout_return_actions(state, player_idx)
+            actions = self._valid_scout_return_actions(state, player_idx)
         elif sub == "redeploy_pick":
-            return self._valid_redeploy_pick_actions(state, player_idx)
+            actions = self._valid_redeploy_pick_actions(state, player_idx)
         elif sub == "redeploy_place":
-            return self._valid_redeploy_place_actions(state, player_idx)
+            actions = self._valid_redeploy_place_actions(state, player_idx)
         elif sub == "deserter_pick":
-            return self._valid_deserter_pick_actions(state, player_idx)
+            actions = self._valid_deserter_pick_actions(state, player_idx)
         elif sub == "traitor_pick":
-            return self._valid_traitor_pick_actions(state, player_idx)
+            actions = self._valid_traitor_pick_actions(state, player_idx)
         elif sub == "traitor_place":
-            return self._valid_traitor_place_actions(state, player_idx)
+            actions = self._valid_traitor_place_actions(state, player_idx)
+        else:
+            actions = []
 
-        return []
+        actions.append({"kind": "toggle_auto_claim"})
+        return actions
 
     def get_waiting_for(self, state):
         if state["winner"] is not None:
@@ -127,6 +130,13 @@ class BattleLineEngine(GameEngine):
 
         state = deepcopy(state)
         kind = action.get("kind")
+
+        # Toggle auto-claim: valid at any point during the active player's turn
+        if kind == "toggle_auto_claim":
+            state["auto_claim"] = not state.get("auto_claim", True)
+            mode = "on" if state["auto_claim"] else "off"
+            return ActionResult(new_state=state, log=[f"Auto-claim turned {mode}"], game_over=False)
+
         phase = state["phase"]
         sub = state["sub_phase"]
         log = []
@@ -416,8 +426,9 @@ class BattleLineEngine(GameEngine):
         state["flags"][fi]["slots"][player_idx].append(card)
         self._check_completion(state, player_idx, fi)
 
-        state["phase"] = "claim_flags"
-        return [f"{player['name']} plays {card['color']} {card['value']} on flag {fi + 1}"]
+        log = [f"{player['name']} plays {card['color']} {card['value']} on flag {fi + 1}"]
+        log += self._enter_claim_phase(state, player_idx)
+        return log
 
     def _do_play_morale_tactic(self, state, player_idx, action):
         ci = action["card_index"]
@@ -445,8 +456,9 @@ class BattleLineEngine(GameEngine):
             player["has_leader_on_board"] = True
         self._check_completion(state, player_idx, fi)
 
-        state["phase"] = "claim_flags"
-        return [f"{player['name']} plays {card['name']} on flag {fi + 1}"]
+        log = [f"{player['name']} plays {card['name']} on flag {fi + 1}"]
+        log += self._enter_claim_phase(state, player_idx)
+        return log
 
     def _do_play_environment(self, state, player_idx, action):
         ci = action["card_index"]
@@ -478,8 +490,9 @@ class BattleLineEngine(GameEngine):
             for pidx in range(2):
                 self._check_completion(state, pidx, fi)
 
-        state["phase"] = "claim_flags"
-        return [f"{player['name']} plays {card['name']} on flag {fi + 1}"]
+        log = [f"{player['name']} plays {card['name']} on flag {fi + 1}"]
+        log += self._enter_claim_phase(state, player_idx)
+        return log
 
     def _do_play_scout(self, state, player_idx, action):
         ci = action["card_index"]
@@ -600,10 +613,29 @@ class BattleLineEngine(GameEngine):
         if has_troops and has_open_flags:
             raise ValueError("You have troop cards and open flag slots — must play a card")
 
-        state["phase"] = "claim_flags"
-        return [f"{player['name']} passes"]
+        log = [f"{player['name']} passes"]
+        log += self._enter_claim_phase(state, player_idx)
+        return log
 
     # ── Claim Flags ───────────────────────────────────────────────────
+
+    def _enter_claim_phase(self, state, player_idx):
+        """Either auto-claim provable flags or enter manual claim phase."""
+        log = []
+        if state.get("auto_claim", True):
+            # Auto-claim all provable flags
+            for fi in range(NUM_FLAGS):
+                if can_claim_flag(state, player_idx, fi):
+                    state["flags"][fi]["claimed_by"] = player_idx
+                    name = state["players"][player_idx]["name"]
+                    log.append(f"{name} claims flag {fi + 1}")
+            # Skip to draw (same logic as _do_done_claiming)
+            state["phase"] = "draw_card"
+            if not state["troop_deck"] and not state["tactics_deck"]:
+                log += self._advance_turn(state)
+        else:
+            state["phase"] = "claim_flags"
+        return log
 
     def _do_claim_flag(self, state, player_idx, action):
         fi = action["flag_index"]
@@ -694,7 +726,7 @@ class BattleLineEngine(GameEngine):
         if ss["returns_remaining"] <= 0:
             state["scout_state"] = None
             state["sub_phase"] = None
-            state["phase"] = "claim_flags"
+            return self._enter_claim_phase(state, player_idx)
 
         return []
 
@@ -751,10 +783,11 @@ class BattleLineEngine(GameEngine):
 
         state["redeploy_state"] = None
         state["sub_phase"] = None
-        state["phase"] = "claim_flags"
 
         name = state["players"][player_idx]["name"]
-        return [f"{name} {log_msg}"]
+        log = [f"{name} {log_msg}"]
+        log += self._enter_claim_phase(state, player_idx)
+        return log
 
     # ── Deserter Sub-phase ────────────────────────────────────────────
 
@@ -785,10 +818,11 @@ class BattleLineEngine(GameEngine):
             state["players"][opponent]["has_leader_on_board"] = False
 
         state["sub_phase"] = None
-        state["phase"] = "claim_flags"
 
         name = state["players"][player_idx]["name"]
-        return [f"{name} deserts {self._card_name(removed)} from flag {fi + 1}"]
+        log = [f"{name} deserts {self._card_name(removed)} from flag {fi + 1}"]
+        log += self._enter_claim_phase(state, player_idx)
+        return log
 
     # ── Traitor Sub-phases ────────────────────────────────────────────
 
@@ -831,10 +865,11 @@ class BattleLineEngine(GameEngine):
 
         state["traitor_state"] = None
         state["sub_phase"] = None
-        state["phase"] = "claim_flags"
 
         name = state["players"][player_idx]["name"]
-        return [f"{name} places stolen {self._card_name(card)} on flag {fi + 1}"]
+        log = [f"{name} places stolen {self._card_name(card)} on flag {fi + 1}"]
+        log += self._enter_claim_phase(state, player_idx)
+        return log
 
     # ── Helpers ───────────────────────────────────────────────────────
 

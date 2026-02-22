@@ -708,6 +708,17 @@ function ActionPanel({ state, myIdx, yourTurn, sendAction, selectedHandIndex, se
   const hand = state.players[myIdx].hand;
   const selectedCard = selectedHandIndex !== null ? hand[selectedHandIndex] : null;
 
+  // ── Auto-claim toggle (shared across phases) ──
+  const autoClaimToggle = (
+    <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
+      <label style={{ fontSize: 11, color: "#6a604a", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+        <input type="checkbox" checked={state.auto_claim !== false}
+          onChange={() => sendAction({ kind: "toggle_auto_claim" })} />
+        Auto-claim flags
+      </label>
+    </div>
+  );
+
   // ── Play Card Phase ──
   if (phase === "play_card") {
     const isGuile = selectedCard?.subtype === "guile";
@@ -749,6 +760,7 @@ function ActionPanel({ state, myIdx, yourTurn, sendAction, selectedHandIndex, se
             <button onClick={() => sendAction({ kind: "pass" })} style={bs(false)}>Pass</button>
           )}
         </div>
+        {autoClaimToggle}
       </div>
     );
   }
@@ -764,6 +776,7 @@ function ActionPanel({ state, myIdx, yourTurn, sendAction, selectedHandIndex, se
         <button onClick={() => sendAction({ kind: "done_claiming" })} style={{ ...bs(true), marginTop: 8 }}>
           Done Claiming
         </button>
+        {autoClaimToggle}
       </div>
     );
   }
@@ -785,6 +798,7 @@ function ActionPanel({ state, myIdx, yourTurn, sendAction, selectedHandIndex, se
             Tactics Deck ({tacticsCount})
           </button>
         </div>
+        {autoClaimToggle}
       </div>
     );
   }

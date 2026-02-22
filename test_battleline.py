@@ -34,9 +34,10 @@ def tactic(card_id):
     return card
 
 
-def make_state():
+def make_state(auto_claim=False):
     """Create a fresh 2-player state with deterministic hands."""
     state = create_initial_state(["p1", "p2"], ["Alice", "Bob"])
+    state["auto_claim"] = auto_claim
     # Give each player a known hand for testing
     state["players"][0]["hand"] = [
         troop("red", 1), troop("red", 2), troop("red", 3),
@@ -815,3 +816,95 @@ class TestPhaseInfo:
         result = engine.apply_action(state, "p1", play_troop_action(0, 0))
         info = engine.get_phase_info(result.new_state)
         assert info["phase"] == "claim_flags"
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Auto-Claim Tests
+# ══════════════════════════════════════════════════════════════════════
+
+class TestAutoClaim:
+
+    def setup_method(self):
+        self.engine = BattleLineEngine()
+
+    def test_auto_claim_skips_claim_phase(self):
+        """With auto_claim on, playing a card skips claim_flags → draw_card."""
+        state = make_state(auto_claim=True)
+        result = self.engine.apply_action(state, "p1", play_troop_action(0, 0))
+        assert result.new_state["phase"] == "draw_card"
+
+    def test_auto_claim_claims_provable_flags(self):
+        """Auto-claim claims flags that are provably won."""
+        state = make_state(auto_claim=True)
+        # Flag 0: player 0 has a wedge, player 1 has nothing
+        state["flags"][0]["slots"][0] = [troop("red", 8), troop("red", 9), troop("red", 10)]
+        state["flags"][0]["completion_turn"][0] = 1
+
+        # Play a card on a different flag to trigger claim phase
+        result = self.engine.apply_action(state, "p1", play_troop_action(0, 1))
+        s = result.new_state
+        assert s["flags"][0]["claimed_by"] == 0
+        assert s["phase"] == "draw_card"
+        assert any("claims flag 1" in msg for msg in result.log)
+
+    def test_auto_claim_off_enters_manual_claim(self):
+        """With auto_claim off, playing enters claim_flags phase."""
+        state = make_state(auto_claim=False)
+        result = self.engine.apply_action(state, "p1", play_troop_action(0, 0))
+        assert result.new_state["phase"] == "claim_flags"
+
+    def test_toggle_auto_claim(self):
+        """Toggle action flips auto_claim state."""
+        state = make_state(auto_claim=True)
+        result = self.engine.apply_action(state, "p1", {"kind": "toggle_auto_claim"})
+        assert result.new_state["auto_claim"] is False
+        assert "Auto-claim turned off" in result.log
+
+        result2 = self.engine.apply_action(result.new_state, "p1", {"kind": "toggle_auto_claim"})
+        assert result2.new_state["auto_claim"] is True
+        assert "Auto-claim turned on" in result2.log
+
+    def test_toggle_in_valid_actions(self):
+        """toggle_auto_claim appears in valid actions."""
+        state = make_state()
+        actions = self.engine.get_valid_actions(state, "p1")
+        kinds = [a["kind"] for a in actions]
+        assert "toggle_auto_claim" in kinds
+
+    def test_auto_claim_triggers_win(self):
+        """Auto-claiming a winning flag ends the game."""
+        state = make_state(auto_claim=True)
+        # 2 adjacent flags already claimed
+        state["flags"][3]["claimed_by"] = 0
+        state["flags"][4]["claimed_by"] = 0
+        # Flag 5: player 0 has a wedge
+        state["flags"][5]["slots"][0] = [troop("red", 8), troop("red", 9), troop("red", 10)]
+        state["flags"][5]["completion_turn"][0] = 1
+
+        # Play a card — auto-claim should claim flag 5 and trigger win
+        result = self.engine.apply_action(state, "p1", play_troop_action(0, 0))
+        assert result.game_over is True
+        assert result.new_state["winner"] == 0
+
+    def test_auto_claim_empty_decks_advances_turn(self):
+        """With empty decks, auto-claim skips draw phase too."""
+        state = make_state(auto_claim=True)
+        state["troop_deck"] = []
+        state["tactics_deck"] = []
+
+        result = self.engine.apply_action(state, "p1", play_troop_action(0, 0))
+        s = result.new_state
+        assert s["current_player"] == 1
+        assert s["phase"] == "play_card"
+
+    def test_full_turn_with_auto_claim(self):
+        """Full turn with auto-claim: play → draw (claim skipped)."""
+        state = make_state(auto_claim=True)
+        result = self.engine.apply_action(state, "p1", play_troop_action(0, 0))
+        state = result.new_state
+        assert state["phase"] == "draw_card"
+
+        result = self.engine.apply_action(state, "p1", draw_card_action("troop"))
+        state = result.new_state
+        assert state["current_player"] == 1
+        assert state["phase"] == "play_card"
