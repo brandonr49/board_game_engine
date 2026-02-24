@@ -521,6 +521,7 @@ class BattleLineEngine(GameEngine):
         state["phase"] = "sub_phase"
         state["sub_phase"] = "scout_draw"
         state["scout_state"] = {"draws_remaining": draws, "returns_remaining": 2}
+        state["skip_draw"] = True
 
         return [f"{player['name']} plays Scout"]
 
@@ -629,10 +630,13 @@ class BattleLineEngine(GameEngine):
                     state["flags"][fi]["claimed_by"] = player_idx
                     name = state["players"][player_idx]["name"]
                     log.append(f"{name} claims flag {fi + 1}")
-            # Skip to draw (same logic as _do_done_claiming)
-            state["phase"] = "draw_card"
-            if not state["troop_deck"] and not state["tactics_deck"]:
+            # Scout already handled drawing — skip straight to next turn
+            if state.get("skip_draw"):
                 log += self._advance_turn(state)
+            else:
+                state["phase"] = "draw_card"
+                if not state["troop_deck"] and not state["tactics_deck"]:
+                    log += self._advance_turn(state)
         else:
             state["phase"] = "claim_flags"
         return log
@@ -650,6 +654,10 @@ class BattleLineEngine(GameEngine):
         return [f"{name} claims flag {fi + 1}"]
 
     def _do_done_claiming(self, state, player_idx):
+        # Scout already handled drawing — skip straight to next turn
+        if state.get("skip_draw"):
+            return self._advance_turn(state)
+
         # Move to draw phase
         state["phase"] = "draw_card"
 
@@ -917,6 +925,7 @@ class BattleLineEngine(GameEngine):
         state["turn_number"] += 1
         state["phase"] = "play_card"
         state["sub_phase"] = None
+        state["skip_draw"] = False
         return []
 
     def _has_own_cards_on_unclaimed_flags(self, state, player_idx):
