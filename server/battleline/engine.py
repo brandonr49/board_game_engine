@@ -36,9 +36,9 @@ class BattleLineEngine(GameEngine):
         player_idx = self._player_index(state, player_id)
         opponent_idx = 1 - player_idx
 
-        # Hide opponent hand — show count only
+        # Hide opponent hand — show card types only (troop vs tactics)
         opp_hand = view["players"][opponent_idx]["hand"]
-        view["players"][opponent_idx]["hand"] = len(opp_hand)
+        view["players"][opponent_idx]["hand"] = [{"type": card["type"]} for card in opp_hand]
 
         # Hide deck contents — show sizes only
         view["troop_deck"] = len(view["troop_deck"])

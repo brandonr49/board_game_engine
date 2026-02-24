@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
 // ─── CONFIGURATION ─────────────────────────────────────────────────
-const WS_URL = "ws://localhost:8765";
+const WS_URL = `ws://${window.location.hostname}:8765`;
 
 // ─── PERSON TYPE CONFIGURATION (mirrors server) ────────────────────
 const PERSON_TYPES = {
