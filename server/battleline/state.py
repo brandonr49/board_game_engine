@@ -108,6 +108,7 @@ def create_initial_state(player_ids, player_names):
         "redeploy_state": None,
         "traitor_state": None,
         "auto_claim": True,
+        "consecutive_passes": 0,
         "log": [],
         "winner": None,
     }
