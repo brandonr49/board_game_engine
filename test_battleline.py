@@ -908,3 +908,169 @@ class TestAutoClaim:
         state = result.new_state
         assert state["current_player"] == 1
         assert state["phase"] == "play_card"
+
+
+# ── Bug Fix Regression Tests ────────────────────────────────────────
+
+class TestScoutSkipsDraw:
+    """Scout's draw-3-return-2 replaces the normal end-of-turn draw."""
+
+    engine = BattleLineEngine()
+
+    def test_scout_skips_draw_auto_claim_on(self):
+        """After Scout, turn advances directly (no draw phase) with auto-claim."""
+        state = make_state(auto_claim=True)
+        state["players"][0]["hand"] = [tactic("scout")] + [troop("red", i) for i in range(1, 7)]
+        initial_hand_size = len(state["players"][0]["hand"])  # 7
+
+        # Play scout
+        result = self.engine.apply_action(state, "p1", {"kind": "play_scout", "card_index": 0})
+        state = result.new_state
+        assert state["sub_phase"] == "scout_draw"
+
+        # Draw 3
+        for _ in range(3):
+            result = self.engine.apply_action(state, "p1", {"kind": "scout_draw_card", "deck": "troop"})
+            state = result.new_state
+
+        # Return 2
+        result = self.engine.apply_action(state, "p1", {"kind": "scout_return_card", "card_index": 0, "deck": "troop"})
+        state = result.new_state
+        result = self.engine.apply_action(state, "p1", {"kind": "scout_return_card", "card_index": 0, "deck": "troop"})
+        state = result.new_state
+
+        # Should advance to opponent's turn (no draw phase)
+        assert state["current_player"] == 1
+        assert state["phase"] == "play_card"
+        # Scout card removed from hand (-1), drew 3, returned 2 = net +0 from initial 7
+        # Initial: 7 cards (scout + 6 troops)
+        # After: -1 scout, +3 drawn, -2 returned = 7 cards
+        assert len(state["players"][0]["hand"]) == 7
+
+    def test_scout_skips_draw_auto_claim_off(self):
+        """After Scout with manual claiming, done_claiming skips draw."""
+        state = make_state(auto_claim=False)
+        state["players"][0]["hand"] = [tactic("scout")] + [troop("red", i) for i in range(1, 7)]
+
+        # Play scout
+        result = self.engine.apply_action(state, "p1", {"kind": "play_scout", "card_index": 0})
+        state = result.new_state
+
+        # Draw 3
+        for _ in range(3):
+            result = self.engine.apply_action(state, "p1", {"kind": "scout_draw_card", "deck": "troop"})
+            state = result.new_state
+
+        # Return 2
+        result = self.engine.apply_action(state, "p1", {"kind": "scout_return_card", "card_index": 0, "deck": "troop"})
+        state = result.new_state
+        result = self.engine.apply_action(state, "p1", {"kind": "scout_return_card", "card_index": 0, "deck": "troop"})
+        state = result.new_state
+
+        # Should be in claim_flags (manual mode)
+        assert state["phase"] == "claim_flags"
+
+        # Done claiming — should skip draw and advance turn
+        result = self.engine.apply_action(state, "p1", {"kind": "done_claiming"})
+        state = result.new_state
+        assert state["current_player"] == 1
+        assert state["phase"] == "play_card"
+        assert len(state["players"][0]["hand"]) == 7  # net +0
+
+
+class TestMudClearsCompletion:
+    """Mud should clear completion_turn when a 3-card side becomes incomplete."""
+
+    engine = BattleLineEngine()
+
+    def test_mud_clears_completion_turn(self):
+        """Playing Mud clears completion_turn for sides with exactly 3 cards."""
+        state = make_state()
+        # Fill flag 0 with 3 cards for player 0
+        state["flags"][0]["slots"][0] = [troop("red", 8), troop("red", 9), troop("red", 10)]
+        state["flags"][0]["completion_turn"][0] = 5  # was completed on turn 5
+
+        # Give player 0 the mud card
+        state["players"][0]["hand"] = [tactic("mud")] + [troop("red", i) for i in range(1, 7)]
+
+        # Play mud on flag 0
+        result = self.engine.apply_action(state, "p1", {"kind": "play_environment", "card_index": 0, "flag_index": 0})
+        state = result.new_state
+
+        # Completion should be cleared (3 cards < 4 required with mud)
+        assert state["flags"][0]["completion_turn"][0] is None
+        assert "mud" in state["flags"][0]["environment"]
+
+    def test_mud_preserves_completion_if_four_cards(self):
+        """If a side already has 4 cards when Mud is played, completion is preserved."""
+        state = make_state()
+        # Put 4 cards on flag 0 for player 0 (unusual, but possible via other tactics)
+        state["flags"][0]["slots"][0] = [
+            troop("red", 7), troop("red", 8), troop("red", 9), troop("red", 10)
+        ]
+        state["flags"][0]["completion_turn"][0] = 5
+
+        state["players"][0]["hand"] = [tactic("mud")] + [troop("red", i) for i in range(1, 7)]
+
+        result = self.engine.apply_action(state, "p1", {"kind": "play_environment", "card_index": 0, "flag_index": 0})
+        state = result.new_state
+
+        # 4 cards >= 4 required — completion_turn should NOT be cleared
+        # (uncheck only clears when count < required)
+        assert state["flags"][0]["completion_turn"][0] == 5
+
+
+class TestConsecutivePassDraw:
+    """Two consecutive passes should end the game as a draw."""
+
+    engine = BattleLineEngine()
+
+    def test_two_consecutive_passes_draw(self):
+        """Both players passing in succession ends the game."""
+        state = make_state()
+        # Empty both players' hands of troops so they can pass
+        state["players"][0]["hand"] = []
+        state["players"][1]["hand"] = []
+        # Empty decks so draw phase is skipped
+        state["troop_deck"] = []
+        state["tactics_deck"] = []
+
+        # Player 0 passes
+        result = self.engine.apply_action(state, "p1", {"kind": "pass"})
+        state = result.new_state
+        assert state["winner"] is None or state["winner"] == "draw"
+
+        if state["winner"] is None:
+            # Advance through claim phase
+            result = self.engine.apply_action(state, "p1", {"kind": "done_claiming"})
+            state = result.new_state
+
+        # If not already draw, player 1 passes
+        if state["winner"] is None:
+            result = self.engine.apply_action(state, "p2", {"kind": "pass"})
+            state = result.new_state
+
+        assert state["winner"] == "draw"
+        assert result.game_over is True
+
+    def test_pass_then_play_resets_counter(self):
+        """A non-pass action resets the consecutive pass counter."""
+        state = make_state()
+        state["players"][0]["hand"] = []
+        state["troop_deck"] = []
+        state["tactics_deck"] = []
+
+        # Player 0 passes
+        result = self.engine.apply_action(state, "p1", {"kind": "pass"})
+        state = result.new_state
+        assert state["consecutive_passes"] == 1
+
+        # Advance through claims
+        result = self.engine.apply_action(state, "p1", {"kind": "done_claiming"})
+        state = result.new_state
+
+        # Player 1 plays a troop instead of passing
+        state["players"][1]["hand"] = [troop("red", 1)]
+        result = self.engine.apply_action(state, "p2", {"kind": "play_troop", "card_index": 0, "flag_index": 0})
+        state = result.new_state
+        assert state["consecutive_passes"] == 0

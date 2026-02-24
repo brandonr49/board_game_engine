@@ -131,6 +131,14 @@ class BattleLineEngine(GameEngine):
         state = deepcopy(state)
         kind = action.get("kind")
 
+        # Reset consecutive pass counter when a card is actually played
+        play_actions = (
+            "play_troop", "play_morale_tactic", "play_environment",
+            "play_scout", "play_redeploy", "play_deserter", "play_traitor",
+        )
+        if kind in play_actions:
+            state["consecutive_passes"] = 0
+
         # Toggle auto-claim: valid at any point during the active player's turn
         if kind == "toggle_auto_claim":
             state["auto_claim"] = not state.get("auto_claim", True)
@@ -224,13 +232,16 @@ class BattleLineEngine(GameEngine):
         else:
             raise ValueError(f"Invalid phase/sub_phase: {phase}/{sub}")
 
-        # Check win condition
-        winner = check_win_condition(state)
+        # Check win condition (draw may already be set by consecutive passes)
         game_over = False
-        if winner is not None:
-            state["winner"] = winner
+        if state["winner"] == "draw":
             game_over = True
-            log.append(f"{state['players'][winner]['name']} wins!")
+        else:
+            winner = check_win_condition(state)
+            if winner is not None:
+                state["winner"] = winner
+                game_over = True
+                log.append(f"{state['players'][winner]['name']} wins!")
 
         return ActionResult(new_state=state, log=log, game_over=game_over)
 
@@ -485,10 +496,11 @@ class BattleLineEngine(GameEngine):
         flag["environment"].append(card["id"])
         player["tactics_played"] += 1
 
-        # Mud may change completion status — re-check both sides
+        # Mud increases required cards from 3 to 4 — clear stale completions
+        # and re-check both sides
         if card["id"] == "mud":
             for pidx in range(2):
-                self._check_completion(state, pidx, fi)
+                self._uncheck_completion(state, pidx, fi)
 
         log = [f"{player['name']} plays {card['name']} on flag {fi + 1}"]
         log += self._enter_claim_phase(state, player_idx)
@@ -613,14 +625,25 @@ class BattleLineEngine(GameEngine):
         if has_troops and has_open_flags:
             raise ValueError("You have troop cards and open flag slots — must play a card")
 
+        state["consecutive_passes"] = state.get("consecutive_passes", 0) + 1
         log = [f"{player['name']} passes"]
+
+        # Two consecutive passes = draw
+        if state["consecutive_passes"] >= 2:
+            state["winner"] = "draw"
+            log.append("Both players passed consecutively — game is a draw")
+            return log
+
         log += self._enter_claim_phase(state, player_idx)
         return log
 
     # ── Claim Flags ───────────────────────────────────────────────────
 
-    def _enter_claim_phase(self, state, player_idx):
-        """Either auto-claim provable flags or enter manual claim phase."""
+    def _enter_claim_phase(self, state, player_idx, skip_draw=False):
+        """Either auto-claim provable flags or enter manual claim phase.
+
+        If skip_draw is True (e.g. after Scout), bypass the draw phase entirely.
+        """
         log = []
         if state.get("auto_claim", True):
             # Auto-claim all provable flags
@@ -629,12 +652,17 @@ class BattleLineEngine(GameEngine):
                     state["flags"][fi]["claimed_by"] = player_idx
                     name = state["players"][player_idx]["name"]
                     log.append(f"{name} claims flag {fi + 1}")
-            # Skip to draw (same logic as _do_done_claiming)
-            state["phase"] = "draw_card"
-            if not state["troop_deck"] and not state["tactics_deck"]:
+            if skip_draw:
                 log += self._advance_turn(state)
+            else:
+                # Skip to draw (same logic as _do_done_claiming)
+                state["phase"] = "draw_card"
+                if not state["troop_deck"] and not state["tactics_deck"]:
+                    log += self._advance_turn(state)
         else:
             state["phase"] = "claim_flags"
+            if skip_draw:
+                state["skip_draw"] = True
         return log
 
     def _do_claim_flag(self, state, player_idx, action):
@@ -650,6 +678,10 @@ class BattleLineEngine(GameEngine):
         return [f"{name} claims flag {fi + 1}"]
 
     def _do_done_claiming(self, state, player_idx):
+        # Skip draw phase if flagged (e.g. after Scout)
+        if state.pop("skip_draw", False):
+            return self._advance_turn(state)
+
         # Move to draw phase
         state["phase"] = "draw_card"
 
@@ -726,7 +758,8 @@ class BattleLineEngine(GameEngine):
         if ss["returns_remaining"] <= 0:
             state["scout_state"] = None
             state["sub_phase"] = None
-            return self._enter_claim_phase(state, player_idx)
+            # Scout's draws replace the normal end-of-turn draw
+            return self._enter_claim_phase(state, player_idx, skip_draw=True)
 
         return []
 
