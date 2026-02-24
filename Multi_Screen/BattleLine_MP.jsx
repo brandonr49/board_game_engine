@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
 // ─── CONFIGURATION ─────────────────────────────────────────────────
-const WS_URL = "ws://localhost:8765";
+const WS_URL = `ws://${window.location.hostname}:8765`;
 
 // ─── CONSTANTS ─────────────────────────────────────────────────────
 
@@ -349,18 +349,32 @@ function CardDisplay({ card, ...props }) {
   return <TacticsCard card={card} {...props} />;
 }
 
-function CardBack({ small }) {
+function CardBack({ small, cardType }) {
   const w = small ? 48 : 60;
   const h = small ? 68 : 85;
+  const isTactics = cardType === "tactics";
   return (
     <div style={{
       width: w, height: h,
-      background: "linear-gradient(135deg, #21262d, #161b22)",
-      border: "1px solid #30363d", borderRadius: 4,
-      display: "flex", alignItems: "center", justifyContent: "center",
+      background: isTactics
+        ? "linear-gradient(135deg, #2a2318, #1c1710)"
+        : "linear-gradient(135deg, #21262d, #161b22)",
+      border: isTactics ? "1px solid #c9a84c44" : "1px solid #30363d",
+      borderRadius: 4,
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
       flexShrink: 0,
+      gap: 2,
     }}>
-      <span style={{ fontSize: small ? 16 : 20, color: "#30363d" }}>⚔</span>
+      <span style={{ fontSize: small ? 14 : 18, color: isTactics ? "#c9a84c55" : "#30363d" }}>
+        {isTactics ? "🃏" : "⚔"}
+      </span>
+      <span style={{
+        fontSize: small ? 5 : 7,
+        color: isTactics ? "#c9a84c44" : "#30363d",
+        textTransform: "uppercase", letterSpacing: 0.5,
+      }}>
+        {isTactics ? "tactics" : "troop"}
+      </span>
     </div>
   );
 }
@@ -460,7 +474,8 @@ function BoardDisplay({ state, myIdx, onFlagClick, onCardClick, highlightedFlags
   const oppIdx = 1 - myIdx;
   const opp = state.players[oppIdx];
   const me = state.players[myIdx];
-  const oppHandCount = typeof opp.hand === "number" ? opp.hand : opp.hand.length;
+  const oppHand = Array.isArray(opp.hand) ? opp.hand : [];
+  const oppHandCount = oppHand.length;
   const anyMud = state.flags.some(f => f.environment.includes("mud"));
   const zoneHeight = anyMud ? 300 : 230;
 
@@ -469,7 +484,7 @@ function BoardDisplay({ state, myIdx, onFlagClick, onCardClick, highlightedFlags
       {/* Opponent info */}
       <div style={{
         display: "flex", justifyContent: "space-between", alignItems: "center",
-        marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid #30363d44",
+        marginBottom: 4, paddingBottom: 6, borderBottom: "1px solid #30363d44",
       }}>
         <span style={{ fontSize: 13, color: "#e8d5a3", fontWeight: 600 }}>
           {opp.name} ({oppHandCount} cards)
@@ -478,6 +493,18 @@ function BoardDisplay({ state, myIdx, onFlagClick, onCardClick, highlightedFlags
           Tactics played: {opp.tactics_played}
         </span>
       </div>
+
+      {/* Opponent hand (face down) */}
+      {oppHandCount > 0 && (
+        <div style={{
+          display: "flex", justifyContent: "center", gap: 4,
+          flexWrap: "wrap", marginBottom: 8, padding: "4px 0",
+        }}>
+          {oppHand.map((card, i) => (
+            <CardBack key={i} small cardType={card.type} />
+          ))}
+        </div>
+      )}
 
       {/* Flags row */}
       <div style={{

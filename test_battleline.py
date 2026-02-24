@@ -314,11 +314,14 @@ class TestTurnFlow:
     def test_player_view_hides_opponent_hand(self):
         state = make_state()
         view = self.engine.get_player_view(state, "p1")
-        # Own hand: list of cards
+        # Own hand: list of full cards
         assert isinstance(view["players"][0]["hand"], list)
-        # Opponent hand: count only
-        assert isinstance(view["players"][1]["hand"], int)
-        assert view["players"][1]["hand"] == 7
+        assert "color" in view["players"][0]["hand"][0]
+        # Opponent hand: list of type-only stubs (no color/value)
+        opp_hand = view["players"][1]["hand"]
+        assert isinstance(opp_hand, list)
+        assert len(opp_hand) == 7
+        assert all("type" in c and "color" not in c for c in opp_hand)
 
     def test_player_view_hides_decks(self):
         state = make_state()

@@ -36,9 +36,9 @@ class BattleLineEngine(GameEngine):
         player_idx = self._player_index(state, player_id)
         opponent_idx = 1 - player_idx
 
-        # Hide opponent hand — show count only
+        # Hide opponent hand — show card types only (troop vs tactics)
         opp_hand = view["players"][opponent_idx]["hand"]
-        view["players"][opponent_idx]["hand"] = len(opp_hand)
+        view["players"][opponent_idx]["hand"] = [{"type": card["type"]} for card in opp_hand]
 
         # Hide deck contents — show sizes only
         view["troop_deck"] = len(view["troop_deck"])
@@ -533,6 +533,7 @@ class BattleLineEngine(GameEngine):
         state["phase"] = "sub_phase"
         state["sub_phase"] = "scout_draw"
         state["scout_state"] = {"draws_remaining": draws, "returns_remaining": 2}
+        state["skip_draw"] = True
 
         return [f"{player['name']} plays Scout"]
 
@@ -655,7 +656,6 @@ class BattleLineEngine(GameEngine):
             if skip_draw:
                 log += self._advance_turn(state)
             else:
-                # Skip to draw (same logic as _do_done_claiming)
                 state["phase"] = "draw_card"
                 if not state["troop_deck"] and not state["tactics_deck"]:
                     log += self._advance_turn(state)
@@ -950,6 +950,7 @@ class BattleLineEngine(GameEngine):
         state["turn_number"] += 1
         state["phase"] = "play_card"
         state["sub_phase"] = None
+        state["skip_draw"] = False
         return []
 
     def _has_own_cards_on_unclaimed_flags(self, state, player_idx):
