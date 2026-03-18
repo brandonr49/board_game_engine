@@ -6,6 +6,7 @@
     "dev": "vite",
     "dev:dragon": "VITE_GAME=dragon vite",
     "dev:battleline": "VITE_GAME=battleline vite",
+    "dev:arboretum": "VITE_GAME=arboretum vite",
     "build": "vite build"
   },
   "dependencies": {
