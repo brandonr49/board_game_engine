@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
 // ─── CONFIGURATION ─────────────────────────────────────────────────
 const WS_URL = `ws://${window.location.hostname}:8765`;
@@ -64,7 +64,9 @@ function bs(primary, disabled) {
 // ─── UTILITIES ─────────────────────────────────────────────────────
 
 function getMyPlayerIdx(state) {
-  return Array.isArray(state.players[0].hand) ? 0 : 1;
+  if (!state || !state.players) return 0;
+  const idx = state.players.findIndex(p => p.player_id === state.your_player_id);
+  return idx >= 0 ? idx : 0;
 }
 
 function cardLabel(card) {
@@ -424,6 +426,9 @@ function GameBoard({ game }) {
 
   const myIdx = useMemo(() => getMyPlayerIdx(state), [state]);
   const oppIdx = 1 - myIdx;
+  if (!state.players || !state.players[myIdx]) {
+    return <div style={S.app}><div style={S.content}><div style={S.card}>Loading game...</div></div></div>;
+  }
   const me = state.players[myIdx];
   const opp = state.players[oppIdx];
 
@@ -709,9 +714,39 @@ function GameLog({ logs, logRef }) {
 
 // ─── APP ───────────────────────────────────────────────────────────
 
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ ...S.app, padding: 40 }}>
+          <div style={S.card}>
+            <div style={{ color: "#e74c3c", fontSize: 18, marginBottom: 12 }}>GameBoard crashed</div>
+            <pre style={{ color: "#ff6b6b", fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+              {this.state.error.message}{"\n"}{this.state.error.stack}
+            </pre>
+            <div style={{ color: "#999", fontSize: 12, marginTop: 12 }}>
+              State: <pre style={{ fontSize: 10, maxHeight: 300, overflow: "auto", color: "#888" }}>
+                {JSON.stringify(this.props.debugState, null, 2)}
+              </pre>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   const game = useGameConnection();
 
   if (!game.gameStarted) return <Lobby game={game} />;
-  return <GameBoard game={game} />;
+  if (!game.gameState) return <div style={S.app}><div style={S.content}><div style={S.card}>Waiting for game state...</div></div></div>;
+  return (
+    <ErrorBoundary debugState={game.gameState}>
+      <GameBoard game={game} />
+    </ErrorBoundary>
+  );
 }
