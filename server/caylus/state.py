@@ -235,6 +235,10 @@ PHASES = [
 ]
 
 ROAD_SIZE = 30  # Total road slots
+GOLD_MINE_POSITION = 15  # 0-indexed; the gold mine is fixed at road position 16 (1-indexed)
+
+# Fixed building positions that new buildings cannot be placed on
+FIXED_POSITIONS = {GOLD_MINE_POSITION}
 
 
 # ── Helper Functions ─────────────────────────────────────────────────
@@ -264,15 +268,38 @@ def create_player(index, player_id, name):
 
 
 def generate_road():
-    """Build the initial road: 6 shuffled neutrals + 3 basic + empty slots."""
+    """Build the initial road.
+
+    Layout (0-indexed):
+      0–5:  6 neutral buildings (shuffled pink tiles)
+      6:    Fixed Peddler
+      7:    Fixed Marketplace
+      8–14: Empty (for player-built buildings)
+      15:   Fixed Gold Mine
+      16–29: Empty (for player-built buildings)
+
+    The gold mine is at a fixed position further down the road,
+    matching the original board game layout.
+    """
     neutrals = deepcopy(NEUTRAL_BUILDINGS)
     random.shuffle(neutrals)
     road = []
+    # Positions 0–5: neutral buildings
     for i, b in enumerate(neutrals):
         road.append({"index": i, "building": b, "worker": None, "house": None})
-    for i, b in enumerate(deepcopy(BASIC_BUILDINGS)):
+    # Positions 6–7: Peddler and Marketplace (first two basic buildings)
+    fixed_early = [b for b in deepcopy(BASIC_BUILDINGS) if b["id"] != "b_goldmine"]
+    for i, b in enumerate(fixed_early):
         road.append({"index": 6 + i, "building": b, "worker": None, "house": None})
-    for i in range(6 + len(BASIC_BUILDINGS), ROAD_SIZE):
+    # Positions 8–14: empty
+    for i in range(8, GOLD_MINE_POSITION):
+        road.append({"index": i, "building": None, "worker": None, "house": None})
+    # Position 15: Gold Mine
+    gold_mine = deepcopy(next(b for b in BASIC_BUILDINGS if b["id"] == "b_goldmine"))
+    gold_mine["fixed"] = True  # Mark as fixed so it's not skipped for building placement
+    road.append({"index": GOLD_MINE_POSITION, "building": gold_mine, "worker": None, "house": None})
+    # Positions 16–29: empty
+    for i in range(GOLD_MINE_POSITION + 1, ROAD_SIZE):
         road.append({"index": i, "building": None, "worker": None, "house": None})
     return road
 

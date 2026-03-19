@@ -14,7 +14,7 @@ from server.caylus.state import (
     CASTLE_SECTIONS, CASTLE_COUNT_TRIGGERS,
     SPECIAL_BUILDINGS, SPECIAL_BUILDING_IDS,
     NEUTRAL_BUILDINGS, BASIC_BUILDINGS, WOOD_BUILDINGS, STONE_BUILDINGS, PRESTIGE_BUILDINGS,
-    FAVOR_TRACKS, PHASES, ROAD_SIZE,
+    FAVOR_TRACKS, PHASES, ROAD_SIZE, FIXED_POSITIONS,
     create_player, generate_road, create_special_state, create_castle, create_building_stock,
     player_name, has_resources, pay_resources, gain_resources,
     get_worker_cost, count_residential_buildings, player_has_building,
@@ -1133,7 +1133,7 @@ class CaylusEngine(GameEngine):
             if b_idx is not None:
                 b = stock[b_idx]
                 pay_resources(p, b.get("cost", {}))
-                empty_slot = next((s for s in state["road"] if s["building"] is None), None)
+                empty_slot = next((s for s in state["road"] if s["building"] is None and s["index"] not in FIXED_POSITIONS), None)
                 if empty_slot:
                     empty_slot["building"] = stock.pop(b_idx)
                     empty_slot["house"] = pidx
@@ -1961,7 +1961,7 @@ class CaylusEngine(GameEngine):
                 if b_idx is not None:
                     b = stock[b_idx]
                     apply_discounted_cost(p, b.get("cost", {}))
-                    empty_slot = next((s for s in state["road"] if s["building"] is None), None)
+                    empty_slot = next((s for s in state["road"] if s["building"] is None and s["index"] not in FIXED_POSITIONS), None)
                     if empty_slot:
                         empty_slot["building"] = stock.pop(b_idx)
                         empty_slot["house"] = pidx
