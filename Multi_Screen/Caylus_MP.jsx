@@ -14,25 +14,87 @@ const PLAYER_COLORS_LIST = [
   { key: "black", bg: "#374151", light: "#9ca3af", name: "Black" },
 ];
 
-const RESOURCE_ICONS = {
-  food: { color: "#e85d75", label: "Food", symbol: "🌾" },
-  wood: { color: "#92400e", label: "Wood", symbol: "🪵" },
-  stone: { color: "#6b7280", label: "Stone", symbol: "🪨" },
-  cloth: { color: "#7c3aed", label: "Cloth", symbol: "🧵" },
-  gold: { color: "#eab308", label: "Gold", symbol: "✦" },
+// Resource cubes — colored squares/symbols
+const RES = {
+  food:  { color: "#e85d75", bg: "#e85d7522", label: "Food",  cube: "🟥", sym: "F" },
+  wood:  { color: "#92400e", bg: "#92400e22", label: "Wood",  cube: "🟫", sym: "W" },
+  stone: { color: "#6b7280", bg: "#6b728022", label: "Stone", cube: "⬜", sym: "S" },
+  cloth: { color: "#7c3aed", bg: "#7c3aed22", label: "Cloth", cube: "🟪", sym: "C" },
+  gold:  { color: "#eab308", bg: "#eab30822", label: "Gold",  cube: "🟨", sym: "G" },
+};
+
+// Building shorthand icons by category/effect
+const BLDG_ICONS = {
+  // Neutral & basic
+  n_farm:     { short: "+2F/1C",  icon: "🌾" },
+  n_sawmill:  { short: "+1W",     icon: "🪓" },
+  n_quarry:   { short: "+1S",     icon: "⛏" },
+  n_carpenter:{ short: "Build🟫", icon: "🔨" },
+  n_market:   { short: "Sell→4$", icon: "💰" },
+  n_peddler:  { short: "Buy 1$",  icon: "🛒" },
+  b_peddler:  { short: "Buy 1$",  icon: "🛒" },
+  b_market:   { short: "Sell→4$", icon: "💰" },
+  b_goldmine: { short: "+1G",     icon: "✦" },
+  // Wood buildings
+  w_farm:     { short: "+2F/1C",  icon: "🌾" },
+  w_sawmill:  { short: "+2W",     icon: "🪓" },
+  w_quarry:   { short: "+2S",     icon: "⛏" },
+  w_market:   { short: "Sell→6$", icon: "💰" },
+  w_peddler:  { short: "Buy×2",   icon: "🛒" },
+  w_tailor:   { short: "C→VP",    icon: "✂️" },
+  w_church:   { short: "$→VP",    icon: "⛪" },
+  w_lawyer:   { short: "→🏠",     icon: "⚖️" },
+  // Stone buildings
+  s_farm:     { short: "+2F+1C",  icon: "🌾" },
+  s_sawmill:  { short: "+2W+1F",  icon: "🪓" },
+  s_quarry:   { short: "+2S+1F",  icon: "⛏" },
+  s_market:   { short: "Sell→8$", icon: "💰" },
+  s_mason:    { short: "Build⬜", icon: "🧱" },
+  s_architect:{ short: "Build🔵", icon: "🏛" },
+  s_bank:     { short: "$→G",     icon: "🏦" },
+  s_alchemist:{ short: "□→G",     icon: "⚗️" },
+  s_goldmine: { short: "+1G",     icon: "✦" },
+  // Prestige
+  p_statue:   { short: "7VP",     icon: "🗿" },
+  p_theater:  { short: "8VP",     icon: "🎭" },
+  p_university:{ short: "8VP",    icon: "📚" },
+  p_monument: { short: "10VP",    icon: "🏛" },
+  p_granary:  { short: "6VP",     icon: "🌾" },
+  p_weaver:   { short: "6VP",     icon: "🧶" },
+  p_cathedral:{ short: "12VP",    icon: "⛪" },
+  p_library:  { short: "5VP",     icon: "📖" },
+  p_hotel:    { short: "5VP",     icon: "🏨" },
+  // Residential
+  residential:{ short: "🏠",      icon: "🏠" },
+};
+
+const SPECIAL_INFO = {
+  gate:             { icon: "🚪", short: "Free move", desc: "Move worker to any unoccupied space for free" },
+  trading_post:     { icon: "💰", short: "+3$",       desc: "Take 3 deniers from stock" },
+  merchants_guild:  { icon: "📜", short: "Provost±3", desc: "Move provost 1–3 spaces in either direction" },
+  joust_field:      { icon: "⚔️", short: "1$+C→⭐",   desc: "Pay 1$ + 1 cloth → gain 1 royal favor" },
+  stables:          { icon: "🐎", short: "Reorder",   desc: "Change turn order (up to 3 slots)" },
+  inn:              { icon: "🍺", short: "1$/worker",  desc: "Pay only 1$ per worker next turn" },
 };
 
 const CASTLE_SECTIONS = {
   dungeon: { name: "Dungeon", capacity: 6, vpPerBatch: 5 },
-  walls: { name: "Walls", capacity: 10, vpPerBatch: 4 },
-  towers: { name: "Towers", capacity: 14, vpPerBatch: 3 },
+  walls:   { name: "Walls",   capacity: 10, vpPerBatch: 4 },
+  towers:  { name: "Towers",  capacity: 14, vpPerBatch: 3 },
 };
 
 const FAVOR_TRACKS = {
-  prestige: { name: "Prestige", icon: "⭐", levels: ["1VP","2VP","3VP","4VP","5VP"] },
-  deniers: { name: "Deniers", icon: "💰", levels: ["3$","4$","5$","6$","7$"] },
-  resources: { name: "Resources", icon: "📦", levels: ["1🌾","🪵/🪨","1🧵","swap","1✦"] },
-  buildings: { name: "Buildings", icon: "🏗️", levels: ["—","Carp-1","Mason-1","Lawyer","Archi-1"] },
+  prestige:  { name: "Prestige",  icon: "⭐", levels: ["1VP","2VP","3VP","4VP","5VP"] },
+  deniers:   { name: "Deniers",   icon: "💰", levels: ["3$","4$","5$","6$","7$"] },
+  resources: { name: "Resources", icon: "📦", levels: ["1F","W/S","1C","swap","1G"] },
+  buildings: { name: "Buildings", icon: "🏗️", levels: ["—","Carp−1","Mason−1","Lawyer","Archi−1"] },
+};
+
+const FAVOR_DESCRIPTIONS = {
+  prestige:  ["Gain 1 VP","Gain 2 VP","Gain 3 VP","Gain 4 VP","Gain 5 VP"],
+  deniers:   ["Gain 3$","Gain 4$","Gain 5$","Gain 6$","Gain 7$"],
+  resources: ["Gain 1 food","Gain 1 wood OR 1 stone","Gain 1 cloth","Swap 1 resource for 2 of another","Gain 1 gold"],
+  buildings: ["No effect","Build wood bldg (−1 cost)","Build stone bldg (−1 cost)","Use Lawyer effect","Build prestige bldg (−1 cost)"],
 };
 
 const PHASES = [
@@ -46,14 +108,60 @@ const PHASES = [
 ];
 
 const TC = {
-  neutral: { bg: "#f5d0c5", border: "#d4a089" },
-  basic: { bg: "#f5d0c5", border: "#d4a089" },
-  wood: { bg: "#d4a574", border: "#92400e" },
-  stone: { bg: "#b8b8b8", border: "#6b7280" },
-  prestige: { bg: "#93c5fd", border: "#2563eb" },
+  neutral:     { bg: "#f5d0c5", border: "#d4a089" },
+  basic:       { bg: "#f5d0c5", border: "#d4a089" },
+  wood:        { bg: "#d4a574", border: "#92400e" },
+  stone:       { bg: "#b8b8b8", border: "#6b7280" },
+  prestige:    { bg: "#93c5fd", border: "#2563eb" },
   residential: { bg: "#86efac", border: "#16a34a" },
-  empty: { bg: "#e8dcc8", border: "#c4b59a" },
+  empty:       { bg: "#e8dcc8", border: "#c4b59a" },
 };
+
+// ============================================================
+// RESOURCE CUBE RENDERING HELPERS
+// ============================================================
+
+function Cube({ type, size = 12 }) {
+  const r = RES[type];
+  if (!r) return null;
+  return (
+    <span title={r.label} style={{
+      display: "inline-block", width: size, height: size,
+      background: r.color, borderRadius: 2,
+      border: `1px solid ${r.color}88`,
+      boxShadow: `inset 1px 1px 0 rgba(255,255,255,0.35)`,
+    }} />
+  );
+}
+
+function CostDisplay({ cost, style: xs }) {
+  if (!cost || Object.keys(cost).length === 0) return null;
+  return (
+    <span style={{ display: "inline-flex", gap: 1, alignItems: "center", ...xs }}>
+      {Object.entries(cost).map(([r, ct]) => (
+        <span key={r} style={{ display: "inline-flex", alignItems: "center", gap: 0 }}>
+          {Array.from({ length: ct }).map((_, i) => <Cube key={i} type={r} size={9} />)}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function ResourceBadge({ type, count, small }) {
+  const r = RES[type];
+  if (!r) return null;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 2,
+      background: r.bg, border: `1px solid ${r.color}55`,
+      borderRadius: 4, padding: small ? "0 4px" : "1px 6px",
+      fontSize: small ? 11 : 13, color: r.color, fontWeight: 600,
+    }}>
+      <Cube type={type} size={small ? 9 : 11} />
+      {count > 0 && <span>{count}</span>}
+    </span>
+  );
+}
 
 // ============================================================
 // WEBSOCKET CONNECTION HOOK
@@ -159,21 +267,6 @@ function useGameConnection() {
 // SMALL UI COMPONENTS
 // ============================================================
 
-function ResourceBadge({ type, count, small }) {
-  const r = RESOURCE_ICONS[type];
-  if (!r) return null;
-  return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 2,
-      background: r.color + "22", border: `1px solid ${r.color}55`,
-      borderRadius: 4, padding: small ? "0 3px" : "1px 5px",
-      fontSize: small ? 11 : 13, color: r.color, fontWeight: 600,
-    }}>
-      <span>{r.symbol}</span>{count > 0 && <span>{count}</span>}
-    </span>
-  );
-}
-
 function PlayerToken({ color, size = 16 }) {
   if (!color) return null;
   return (
@@ -199,10 +292,10 @@ function WorkerCylinder({ color, size = 14 }) {
 
 function Btn({ children, onClick, disabled, variant = "primary", small, style: xs }) {
   const V = {
-    primary: { bg: "linear-gradient(135deg,#92400e,#78350f)", color: "#fef3c7", border: "1px solid #78350f" },
+    primary:   { bg: "linear-gradient(135deg,#92400e,#78350f)", color: "#fef3c7", border: "1px solid #78350f" },
     secondary: { bg: "#fef3c7", color: "#78350f", border: "1px solid #d4a574" },
-    danger: { bg: "#fee2e2", color: "#dc2626", border: "1px solid #fca5a5" },
-    success: { bg: "#dcfce7", color: "#16a34a", border: "1px solid #86efac" },
+    danger:    { bg: "#fee2e2", color: "#dc2626", border: "1px solid #fca5a5" },
+    success:   { bg: "#dcfce7", color: "#16a34a", border: "1px solid #86efac" },
   };
   const s = V[variant];
   return (
@@ -216,6 +309,28 @@ function Btn({ children, onClick, disabled, variant = "primary", small, style: x
         opacity: disabled ? 0.6 : 1, fontFamily: "inherit", ...xs,
       }}
     >{children}</button>
+  );
+}
+
+function Tooltip({ text, children }) {
+  const [show, setShow] = useState(false);
+  return (
+    <span
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+      style={{ position: "relative", display: "inline-flex" }}
+    >
+      {children}
+      {show && text && (
+        <span style={{
+          position: "absolute", bottom: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)",
+          background: "#1e1208", color: "#fef3c7", padding: "4px 8px", borderRadius: 5,
+          fontSize: 11, whiteSpace: "nowrap", zIndex: 100, pointerEvents: "none",
+          boxShadow: "0 3px 10px rgba(0,0,0,0.3)", maxWidth: 260,
+          lineHeight: 1.3,
+        }}>{text}</span>
+      )}
+    </span>
   );
 }
 
@@ -328,6 +443,98 @@ function Lobby({ game }) {
 }
 
 // ============================================================
+// TURN ORDER BAR — shows all players, resources, whose turn
+// ============================================================
+
+function TurnOrderBar({ gs, activeIdx, myIdx }) {
+  const turnOrder = gs.turn_order || [];
+  // Sort players in turn order
+  const orderedPlayers = turnOrder.map(idx => gs.players.find(p => p.index === idx)).filter(Boolean);
+  // Add any players not in turn_order (shouldn't happen, but safety)
+  gs.players.forEach(p => {
+    if (!orderedPlayers.find(op => op.index === p.index)) orderedPlayers.push(p);
+  });
+
+  return (
+    <div style={{
+      background: "#faf5eb", border: "1px solid #d4a57466", borderRadius: 10,
+      padding: "6px 10px", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "stretch",
+    }}>
+      <div style={{
+        fontSize: 10, fontWeight: 700, color: "#92400e88", letterSpacing: 1,
+        display: "flex", alignItems: "center", marginRight: 4,
+      }}>TURN ORDER</div>
+      {orderedPlayers.map((pl, orderPos) => {
+        const c = pl.color;
+        const isActive = pl.index === activeIdx;
+        const isYou = pl.index === myIdx;
+        const avail = pl.workers_total - pl.workers_placed;
+
+        return (
+          <div key={pl.index} style={{
+            background: isActive ? `${c.bg}18` : "transparent",
+            border: isActive ? `2px solid ${c.bg}` : isYou ? `2px solid ${c.bg}55` : "1px solid #d4a57433",
+            borderRadius: 8, padding: "4px 8px", display: "flex", flexDirection: "column", gap: 2,
+            minWidth: 130, flex: "1 1 130px",
+            boxShadow: isActive ? `0 0 8px ${c.bg}22` : "none",
+            position: "relative",
+          }}>
+            {/* Active indicator */}
+            {isActive && (
+              <div style={{
+                position: "absolute", top: -1, right: 6, background: c.bg, color: "#fff",
+                fontSize: 8, fontWeight: 800, padding: "1px 5px", borderRadius: "0 0 4px 4px",
+                letterSpacing: 0.5,
+              }}>ACTIVE</div>
+            )}
+
+            {/* Name row */}
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <PlayerToken color={c} size={14} />
+              <span style={{ fontWeight: 700, fontSize: 12, color: c.bg }}>{pl.name}</span>
+              {isYou && <span style={{
+                fontSize: 8, background: "#dbeafe", color: "#2563eb", borderRadius: 3,
+                padding: "0 3px", fontWeight: 700,
+              }}>YOU</span>}
+              {pl.passed && <span style={{
+                fontSize: 8, background: "#fee2e2", color: "#dc2626", borderRadius: 3,
+                padding: "0 3px", fontWeight: 700,
+              }}>PASS</span>}
+              <span style={{ marginLeft: "auto", fontWeight: 800, fontSize: 13, color: "#78350f" }}>{pl.score}VP</span>
+            </div>
+
+            {/* Resources row */}
+            <div style={{ display: "flex", alignItems: "center", gap: 3, flexWrap: "wrap" }}>
+              <span style={{
+                fontSize: 11, fontWeight: 700, color: "#b8860b",
+                background: "#fef3c7", borderRadius: 3, padding: "0 3px",
+              }}>💰{pl.deniers}</span>
+              {Object.entries(pl.resources).map(([r, ct]) => (
+                ct > 0 ? (
+                  <span key={r} style={{
+                    display: "inline-flex", alignItems: "center", gap: 1,
+                    fontSize: 10, fontWeight: 600, color: RES[r]?.color,
+                  }}>
+                    <Cube type={r} size={8} />{ct}
+                  </span>
+                ) : null
+              ))}
+              <span style={{
+                fontSize: 9, color: "#78350f88", marginLeft: "auto",
+                display: "inline-flex", alignItems: "center", gap: 1,
+              }}>
+                {Array.from({ length: avail }).map((_, i) => <WorkerCylinder key={i} color={c} size={6} />)}
+                {avail === 0 && <span>—</span>}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================
 // PHASE TRACKER
 // ============================================================
 
@@ -347,6 +554,143 @@ function PhaseTracker({ currentPhase }) {
 }
 
 // ============================================================
+// INTERACTIVE ROAD — buildings shown in track order, clickable
+// ============================================================
+
+function RoadPanel({ gs, validPlaceActions, onPlaceWorker, yourTurn }) {
+  // Build a lookup: road_index → action
+  const placeableMap = {};
+  if (validPlaceActions) {
+    validPlaceActions.forEach(a => { placeableMap[a.road_index] = a; });
+  }
+
+  return (
+    <div style={{
+      background: "rgba(120,80,40,0.06)", borderRadius: 10, padding: 10,
+      border: "1px solid #d4a57444",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#78350f", letterSpacing: 1 }}>
+          🛤️ ROAD
+        </span>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 10 }}>
+          <span style={{ color: "#dc2626", fontWeight: 700 }}>▼ Bailiff: {gs.bailiff_position + 1}</span>
+          <span style={{ color: "#2563eb", fontWeight: 700 }}>▲ Provost: {gs.provost_position + 1}</span>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+        {gs.road.map((slot, i) => {
+          const b = slot.building;
+          const bType = b ? (b.type || "neutral") : "empty";
+          const tc = TC[bType] || TC.empty;
+          const isBailiff = i === gs.bailiff_position;
+          const isProvost = i === gs.provost_position;
+          const beyondProvost = i > gs.provost_position;
+
+          const ownerColor = (slot.house !== null && slot.house !== undefined)
+            ? gs.players.find(p => p.index === slot.house)?.color : null;
+          const workerColor = (slot.worker !== null && slot.worker !== undefined)
+            ? gs.players.find(p => p.index === slot.worker)?.color : null;
+
+          const canPlace = !!placeableMap[i];
+          const action = placeableMap[i];
+          const bldgInfo = b ? (BLDG_ICONS[b.id] || BLDG_ICONS[bType] || {}) : {};
+
+          const tooltipText = b
+            ? `${b.name}${b.description ? " — " + b.description : ""}${b.cost ? "\nCost: " + Object.entries(b.cost).map(([r,n]) => `${n} ${r}`).join(", ") : ""}${action ? `\n💰 Place worker: ${action.cost}$` : ""}`
+            : "Empty slot";
+
+          return (
+            <Tooltip key={i} text={tooltipText}>
+              <div
+                onClick={() => canPlace && onPlaceWorker(action)}
+                style={{
+                  width: 64, minHeight: 70, borderRadius: 6,
+                  background: beyondProvost ? "#e8dcc855" : canPlace ? `${tc.bg}` : tc.bg,
+                  border: canPlace ? "2px solid #16a34a"
+                    : isBailiff ? "2px solid #dc2626"
+                    : isProvost ? "2px solid #2563eb"
+                    : `1px solid ${tc.border}`,
+                  padding: 3, fontSize: 9, textAlign: "center",
+                  opacity: beyondProvost ? 0.4 : 1, position: "relative",
+                  cursor: canPlace ? "pointer" : "default",
+                  transition: "transform 0.1s, box-shadow 0.1s",
+                  boxShadow: canPlace ? "0 0 6px #16a34a44" : "none",
+                  ...(canPlace ? { transform: "translateY(-2px)" } : {}),
+                }}
+              >
+                {/* Building icon */}
+                {b && bldgInfo.icon && (
+                  <div style={{ fontSize: 13, lineHeight: 1 }}>{bldgInfo.icon}</div>
+                )}
+                {/* Building name */}
+                <div style={{
+                  fontWeight: 700, color: "#3d2a14", lineHeight: 1.1,
+                  fontSize: b ? 8 : 9, minHeight: 10,
+                }}>
+                  {b ? b.name : "—"}
+                </div>
+                {/* Shorthand effect */}
+                {b && bldgInfo.short && (
+                  <div style={{
+                    fontSize: 7, color: "#5c3a1e", fontWeight: 600,
+                    background: "rgba(255,255,255,0.5)", borderRadius: 2, padding: "0 2px",
+                    marginTop: 1,
+                  }}>{bldgInfo.short}</div>
+                )}
+                {/* Cost to build (for supply buildings shown on road) */}
+                {b && b.cost && (
+                  <div style={{ marginTop: 1 }}>
+                    <CostDisplay cost={b.cost} />
+                  </div>
+                )}
+                {/* Slot number */}
+                <div style={{ fontSize: 7, color: "#78350f66", marginTop: 1 }}>{i + 1}</div>
+
+                {/* Owner house marker */}
+                {ownerColor && (
+                  <div style={{
+                    position: "absolute", bottom: 1, left: 2,
+                    width: 8, height: 8, borderRadius: "50%",
+                    background: ownerColor.bg, border: `1px solid ${ownerColor.light}`,
+                  }} />
+                )}
+                {/* Worker on this slot */}
+                {workerColor && (
+                  <div style={{ position: "absolute", top: 1, right: 1 }}>
+                    <WorkerCylinder color={workerColor} size={8} />
+                  </div>
+                )}
+                {/* Bailiff / Provost markers */}
+                {(isBailiff || isProvost) && (
+                  <div style={{
+                    position: "absolute", bottom: -2, right: 1,
+                    fontSize: 7, fontWeight: 800,
+                    display: "flex", gap: 1,
+                  }}>
+                    {isBailiff && <span style={{ color: "#dc2626" }}>B</span>}
+                    {isProvost && <span style={{ color: "#2563eb" }}>P</span>}
+                  </div>
+                )}
+                {/* Placeable indicator */}
+                {canPlace && (
+                  <div style={{
+                    position: "absolute", top: -4, left: "50%", transform: "translateX(-50%)",
+                    background: "#16a34a", color: "#fff", fontSize: 7, fontWeight: 800,
+                    padding: "0 4px", borderRadius: 3,
+                  }}>{action.cost}$</div>
+                )}
+              </div>
+            </Tooltip>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // ACTION PANEL — dynamic from valid_actions
 // ============================================================
 
@@ -354,7 +698,7 @@ function ActionPanel({ game, gs, submitAction }) {
   const actions = gs.valid_actions || [];
   const yourTurn = game.yourTurn;
   const myIdx = gs.your_player_idx;
-  const myPlayer = gs.players.find((p) => p.index === myIdx);
+  const myPlayer = gs.players.find(p => p.index === myIdx);
   const myColor = myPlayer?.color;
 
   if (gs.game_over) {
@@ -377,8 +721,8 @@ function ActionPanel({ game, gs, submitAction }) {
   }
 
   if (!yourTurn || actions.length === 0) {
-    const waitNames = (game.waitingFor || []).map((pid) => {
-      const wp = gs.players.find((p) => p.player_id === pid);
+    const waitNames = (game.waitingFor || []).map(pid => {
+      const wp = gs.players.find(p => p.player_id === pid);
       return wp ? wp.name : pid;
     });
     return (
@@ -391,15 +735,13 @@ function ActionPanel({ game, gs, submitAction }) {
     );
   }
 
-  // Group actions by kind for cleaner UI
-  const roadActions = actions.filter((a) => a.kind === "place_worker");
-  const specialActions = actions.filter((a) => a.kind === "place_special");
-  const castleAction = actions.find((a) => a.kind === "place_castle");
-  const passAction = actions.find((a) => a.kind === "pass");
-  const incomeAction = actions.find((a) => a.kind === "collect_income");
-
-  // Generic action list for non-placement phases
-  const otherActions = actions.filter((a) =>
+  // Road placement actions are handled by clicking on the road, but still show note
+  const roadActions = actions.filter(a => a.kind === "place_worker");
+  const specialActions = actions.filter(a => a.kind === "place_special");
+  const castleAction = actions.find(a => a.kind === "place_castle");
+  const passAction = actions.find(a => a.kind === "pass");
+  const incomeAction = actions.find(a => a.kind === "collect_income");
+  const otherActions = actions.filter(a =>
     !["place_worker", "place_special", "place_castle", "pass", "collect_income"].includes(a.kind)
   );
 
@@ -409,12 +751,14 @@ function ActionPanel({ game, gs, submitAction }) {
     <div style={{
       background: myColor ? `${myColor.bg}10` : "#faf5eb",
       border: `2px solid ${borderColor}`,
-      borderRadius: 10, padding: 12,
+      borderRadius: 10, padding: 10,
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-        {myColor && <PlayerToken color={myColor} size={22} />}
-        <span style={{ fontWeight: 800, fontSize: 16, color: borderColor }}>Your Turn</span>
-        {game.phaseInfo && <span style={{ fontSize: 12, color: "#78350f" }}>{game.phaseInfo.description}</span>}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+        {myColor && <PlayerToken color={myColor} size={20} />}
+        <span style={{ fontWeight: 800, fontSize: 15, color: borderColor }}>Your Turn</span>
+        {game.phaseInfo && (
+          <span style={{ fontSize: 11, color: "#78350f", fontStyle: "italic" }}>{game.phaseInfo.description}</span>
+        )}
       </div>
 
       {incomeAction && (
@@ -424,29 +768,28 @@ function ActionPanel({ game, gs, submitAction }) {
       )}
 
       {roadActions.length > 0 && (
-        <div style={{ marginBottom: 6 }}>
-          <div style={{ fontSize: 11, color: "#92400e88", fontWeight: 600, marginBottom: 3 }}>
-            ROAD BUILDINGS (click to place worker)
-          </div>
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-            {roadActions.map((a) => (
-              <Btn key={a.road_index} onClick={() => submitAction(a)} small variant={a.is_own ? "success" : "secondary"}>
-                {a.building_name} ({a.cost}$)
-              </Btn>
-            ))}
-          </div>
+        <div style={{
+          fontSize: 11, color: "#16a34a", fontWeight: 600, marginBottom: 4,
+          padding: "3px 8px", background: "#dcfce7", borderRadius: 5, display: "inline-block",
+        }}>
+          ↑ Click a green-highlighted building on the road to place your worker
         </div>
       )}
 
       {specialActions.length > 0 && (
         <div style={{ marginBottom: 6 }}>
-          <div style={{ fontSize: 11, color: "#92400e88", fontWeight: 600, marginBottom: 3 }}>SPECIAL BUILDINGS</div>
+          <div style={{ fontSize: 10, color: "#92400e88", fontWeight: 600, marginBottom: 3 }}>SPECIAL BUILDINGS</div>
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-            {specialActions.map((a) => (
-              <Btn key={a.special_id} onClick={() => submitAction(a)} small variant="secondary">
-                {a.description}
-              </Btn>
-            ))}
+            {specialActions.map(a => {
+              const info = SPECIAL_INFO[a.special_id];
+              return (
+                <Tooltip key={a.special_id} text={info?.desc || a.description}>
+                  <Btn onClick={() => submitAction(a)} small variant="secondary">
+                    {info?.icon} {a.description}
+                  </Btn>
+                </Tooltip>
+              );
+            })}
           </div>
         </div>
       )}
@@ -454,7 +797,7 @@ function ActionPanel({ game, gs, submitAction }) {
       {castleAction && (
         <div style={{ marginBottom: 6 }}>
           <Btn onClick={() => submitAction(castleAction)} small variant="secondary">
-            {castleAction.description}
+            🏰 {castleAction.description}
           </Btn>
         </div>
       )}
@@ -485,104 +828,54 @@ function ActionPanel({ game, gs, submitAction }) {
 }
 
 // ============================================================
-// ROAD PANEL
-// ============================================================
-
-function RoadPanel({ gs }) {
-  return (
-    <div style={{ background: "rgba(120,80,40,0.06)", borderRadius: 10, padding: 10, border: "1px solid #d4a57444" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: "#78350f", letterSpacing: 1 }}>ROAD</span>
-        <span style={{ fontSize: 10, color: "#92400e88" }}>
-          Bailiff: {gs.bailiff_position + 1} | Provost: {gs.provost_position + 1}
-        </span>
-      </div>
-      <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
-        {gs.road.map((slot, i) => {
-          const b = slot.building;
-          const bType = b ? b.type : "empty";
-          const tc = TC[bType] || TC.empty;
-          const isBailiff = i === gs.bailiff_position;
-          const isProvost = i === gs.provost_position;
-          const beyondProvost = i > gs.provost_position;
-          const ownerColor = slot.house !== null && slot.house !== undefined ? gs.players.find((p) => p.index === slot.house)?.color : null;
-          const workerColor = slot.worker !== null && slot.worker !== undefined ? gs.players.find((p) => p.index === slot.worker)?.color : null;
-
-          return (
-            <div key={i} style={{
-              width: 56, minHeight: 60, borderRadius: 5,
-              background: beyondProvost ? "#e8dcc855" : tc.bg,
-              border: isBailiff || isProvost ? `2px solid ${isBailiff ? "#dc2626" : "#2563eb"}` : `1px solid ${tc.border}`,
-              padding: 2, fontSize: 9, textAlign: "center",
-              opacity: beyondProvost ? 0.5 : 1, position: "relative",
-            }}>
-              <div style={{ fontWeight: 700, color: "#3d2a14", lineHeight: 1.1, minHeight: 18 }}>
-                {b ? b.name : "—"}
-              </div>
-              <div style={{ fontSize: 8, color: "#78350f88" }}>{i + 1}</div>
-              {ownerColor && (
-                <div style={{ width: 8, height: 8, borderRadius: "50%", background: ownerColor.bg, margin: "1px auto", border: `1px solid ${ownerColor.light}` }} />
-              )}
-              {workerColor && (
-                <div style={{ position: "absolute", top: 1, right: 1 }}>
-                  <WorkerCylinder color={workerColor} size={8} />
-                </div>
-              )}
-              {(isBailiff || isProvost) && (
-                <div style={{ fontSize: 7, fontWeight: 800, color: isBailiff ? "#dc2626" : "#2563eb" }}>
-                  {isBailiff && "B"}{isBailiff && isProvost && "+"}{isProvost && "P"}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
 // SPECIAL BUILDINGS PANEL
 // ============================================================
 
 function SpecialBuildingsPanel({ gs }) {
   const specials = [
-    { id: "gate", name: "Gate" },
-    { id: "trading_post", name: "Trading Post" },
-    { id: "merchants_guild", name: "Merchants' Guild" },
-    { id: "joust_field", name: "Joust Field" },
-    { id: "stables", name: "Stables" },
-    { id: "inn", name: "Inn" },
+    { id: "gate" }, { id: "trading_post" }, { id: "merchants_guild" },
+    { id: "joust_field" }, { id: "stables" }, { id: "inn" },
   ];
   const ss = gs.special_state;
 
   return (
-    <div style={{ background: "rgba(120,80,40,0.06)", borderRadius: 10, padding: 10, border: "1px solid #d4a57444" }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "#78350f", marginBottom: 4, letterSpacing: 1 }}>SPECIAL BUILDINGS</div>
+    <div style={{
+      background: "rgba(120,80,40,0.06)", borderRadius: 10, padding: 10,
+      border: "1px solid #d4a57444",
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "#78350f", marginBottom: 4, letterSpacing: 1 }}>
+        SPECIAL BUILDINGS
+      </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {specials.map((sp) => {
+        {specials.map(sp => {
+          const info = SPECIAL_INFO[sp.id];
           let occupants = [];
           if (sp.id === "stables") {
-            occupants = (ss.stables || []).filter((x) => x !== null).map((idx) => gs.players.find((p) => p.index === idx)?.color);
+            occupants = (ss.stables || []).filter(x => x !== null).map(idx => gs.players.find(p => p.index === idx)?.color);
           } else if (sp.id === "inn") {
             if (ss.inn?.left !== null && ss.inn?.left !== undefined)
-              occupants.push(gs.players.find((p) => p.index === ss.inn.left)?.color);
+              occupants.push(gs.players.find(p => p.index === ss.inn.left)?.color);
             if (ss.inn?.right !== null && ss.inn?.right !== undefined)
-              occupants.push(gs.players.find((p) => p.index === ss.inn.right)?.color);
+              occupants.push(gs.players.find(p => p.index === ss.inn.right)?.color);
           } else {
             const w = ss[sp.id]?.worker;
             if (w !== null && w !== undefined)
-              occupants.push(gs.players.find((p) => p.index === w)?.color);
+              occupants.push(gs.players.find(p => p.index === w)?.color);
           }
 
           return (
-            <div key={sp.id} style={{
-              background: "#fef3c7", border: "1px solid #d4a574", borderRadius: 6, padding: "4px 8px",
-              fontSize: 11, fontWeight: 600, color: "#78350f", display: "flex", alignItems: "center", gap: 4,
-            }}>
-              <span>{sp.name}</span>
-              {occupants.map((c, i) => c && <WorkerCylinder key={i} color={c} size={9} />)}
-            </div>
+            <Tooltip key={sp.id} text={info?.desc}>
+              <div style={{
+                background: "#fef3c7", border: "1px solid #d4a574", borderRadius: 6,
+                padding: "4px 8px", fontSize: 11, fontWeight: 600, color: "#78350f",
+                display: "flex", alignItems: "center", gap: 4,
+              }}>
+                <span>{info?.icon}</span>
+                <span>{info ? info.short : sp.id}</span>
+                {occupants.map((c, i) => c && <WorkerCylinder key={i} color={c} size={9} />)}
+                {occupants.length === 0 && <span style={{ color: "#c4b59a", fontSize: 9 }}>empty</span>}
+              </div>
+            </Tooltip>
           );
         })}
       </div>
@@ -602,22 +895,30 @@ function CastlePanel({ gs }) {
   ];
 
   return (
-    <div style={{ background: "rgba(120,80,40,0.06)", borderRadius: 10, padding: 10, border: "1px solid #d4a57444" }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "#78350f", marginBottom: 6, letterSpacing: 1 }}>CASTLE</div>
+    <div style={{
+      background: "rgba(120,80,40,0.06)", borderRadius: 10, padding: 10,
+      border: "1px solid #d4a57444",
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "#78350f", marginBottom: 6, letterSpacing: 1 }}>
+        🏰 CASTLE
+        <span style={{ fontWeight: 400, fontSize: 10, color: "#92400e88", marginLeft: 8 }}>
+          Cost per batch: 1 <Cube type="food" size={8} /> + 2 different cubes
+        </span>
+      </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {secs.map((s) => (
+        {secs.map(s => (
           <div key={s.key} style={{
             background: s.key === gs.castle.current_section ? "#fef3c7" : "#f5ead6",
             border: s.key === gs.castle.current_section ? "2px solid #d97706" : "1px solid #d4a57444",
             borderRadius: 8, padding: 6, minWidth: 100,
           }}>
             <div style={{ fontWeight: 700, fontSize: 11, color: "#78350f", marginBottom: 3, textAlign: "center" }}>
-              {s.name} ({s.parts.filter((x) => x !== null).length}/{s.capacity})
+              {s.name} ({s.parts.filter(x => x !== null).length}/{s.capacity})
               {s.counted && <span style={{ color: "#16a34a", marginLeft: 3 }}>✓</span>}
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 2, justifyContent: "center" }}>
               {s.parts.map((pt, i) => {
-                const c = pt !== null ? gs.players.find((p) => p.index === pt)?.color : null;
+                const c = pt !== null ? gs.players.find(p => p.index === pt)?.color : null;
                 return (
                   <div key={i} style={{
                     width: 14, height: 14, borderRadius: 3,
@@ -627,14 +928,19 @@ function CastlePanel({ gs }) {
                 );
               })}
             </div>
-            <div style={{ fontSize: 9, color: "#92400e88", textAlign: "center", marginTop: 2 }}>+{s.vpPerBatch}VP/batch</div>
+            <div style={{ fontSize: 9, color: "#92400e88", textAlign: "center", marginTop: 2 }}>
+              +{s.vpPerBatch}VP/batch
+            </div>
           </div>
         ))}
       </div>
       {gs.castle.workers.length > 0 && (
-        <div style={{ marginTop: 4, fontSize: 10, color: "#78350f", display: "flex", gap: 3, alignItems: "center" }}>
+        <div style={{
+          marginTop: 4, fontSize: 10, color: "#78350f",
+          display: "flex", gap: 3, alignItems: "center",
+        }}>
           Workers: {gs.castle.workers.map((w, i) => {
-            const c = gs.players.find((p) => p.index === w)?.color;
+            const c = gs.players.find(p => p.index === w)?.color;
             return <WorkerCylinder key={i} color={c} size={9} />;
           })}
         </div>
@@ -644,59 +950,27 @@ function CastlePanel({ gs }) {
 }
 
 // ============================================================
-// PLAYER PANELS
-// ============================================================
-
-function PlayerPanel({ player, isActive, isYou }) {
-  const c = player.color;
-  const avail = player.workers_total - player.workers_placed;
-  return (
-    <div style={{
-      background: isActive ? `${c.bg}12` : "#faf5eb",
-      border: isYou ? `2px solid ${c.bg}` : isActive ? `2px solid ${c.bg}66` : "1px solid #d4a57444",
-      borderRadius: 8, padding: 8, minWidth: 160, flex: "1 1 160px",
-      boxShadow: isActive ? `0 0 10px ${c.bg}33` : "none",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
-        <PlayerToken color={c} size={18} />
-        <span style={{ fontWeight: 800, color: c.bg, fontSize: 13 }}>{player.name}</span>
-        {isYou && <span style={{ fontSize: 9, background: "#dbeafe", color: "#2563eb", borderRadius: 3, padding: "0 3px", fontWeight: 700 }}>YOU</span>}
-        {player.passed && <span style={{ fontSize: 9, background: "#fee2e2", color: "#dc2626", borderRadius: 3, padding: "0 3px", fontWeight: 700 }}>PASS</span>}
-        {player.inn_occupant && <span style={{ fontSize: 9, background: "#dbeafe", color: "#2563eb", borderRadius: 3, padding: "0 3px", fontWeight: 700 }}>INN</span>}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3 }}>
-        <span style={{ fontWeight: 800, fontSize: 16, color: "#78350f", background: "#fef3c7", borderRadius: 4, padding: "1px 6px" }}>{player.score}VP</span>
-        <span style={{ fontWeight: 700, fontSize: 13, color: "#92400e", background: "#fef3c7", borderRadius: 4, padding: "1px 5px", border: "1px solid #f59e0b55" }}>💰{player.deniers}</span>
-      </div>
-      <div style={{ display: "flex", gap: 2, flexWrap: "wrap", marginBottom: 3 }}>
-        {Object.entries(player.resources).map(([r, ct]) => <ResourceBadge key={r} type={r} count={ct} small />)}
-      </div>
-      <div style={{ fontSize: 10, color: "#78350f", display: "flex", gap: 2, alignItems: "center" }}>
-        Workers: {Array.from({ length: avail }).map((_, i) => <WorkerCylinder key={i} color={c} size={7} />)}
-        {avail === 0 && <span style={{ color: "#92400e88" }}>none</span>}
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
-// FAVOR TABLE
+// FAVOR TABLE — clearer descriptions
 // ============================================================
 
 function FavorTablePanel({ gs }) {
   const fca = gs.favor_columns_available;
   return (
-    <div style={{ background: "rgba(120,80,40,0.06)", borderRadius: 10, padding: 10, border: "1px solid #d4a57444" }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "#78350f", marginBottom: 4 }}>ROYAL FAVORS</div>
+    <div style={{
+      background: "rgba(120,80,40,0.06)", borderRadius: 10, padding: 10,
+      border: "1px solid #d4a57444", flex: "1 1 340px",
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "#78350f", marginBottom: 6 }}>⭐ ROYAL FAVORS</div>
       <table style={{ borderCollapse: "collapse", fontSize: 10, width: "100%" }}>
         <thead>
           <tr>
-            <th style={{ textAlign: "left", padding: "2px 4px", color: "#78350f" }}>Track</th>
-            {[1, 2, 3, 4, 5].map((n) => (
+            <th style={{ textAlign: "left", padding: "3px 4px", color: "#78350f", borderBottom: "1px solid #d4a57444" }}>Track</th>
+            {[1, 2, 3, 4, 5].map(n => (
               <th key={n} style={{
-                padding: "2px 4px", color: "#78350f", textAlign: "center",
-                opacity: n <= fca ? 1 : 0.25,
+                padding: "3px 4px", color: "#78350f", textAlign: "center",
+                opacity: n <= fca ? 1 : 0.2,
                 background: n <= fca ? "#fef3c7" : "transparent", borderRadius: 3,
+                borderBottom: "1px solid #d4a57444",
               }}>{n}</th>
             ))}
           </tr>
@@ -704,20 +978,34 @@ function FavorTablePanel({ gs }) {
         <tbody>
           {Object.entries(FAVOR_TRACKS).map(([k, t]) => (
             <tr key={k}>
-              <td style={{ padding: "2px 4px", fontWeight: 600, color: "#78350f" }}>{t.icon} {t.name}</td>
-              {t.levels.map((l, i) => (
-                <td key={i} style={{ padding: "2px 4px", textAlign: "center", opacity: i < fca ? 1 : 0.25, color: "#5c3a1e" }}>
-                  <div>{l}</div>
-                  <div style={{ display: "flex", gap: 1, justifyContent: "center", marginTop: 1 }}>
-                    {gs.players.filter((p) => p.favors[k] === i + 1).map((p) => (
-                      <div key={p.index} style={{
-                        width: 8, height: 8, borderRadius: "50%",
-                        background: p.color.bg, border: `1px solid ${p.color.light}`,
-                      }} />
-                    ))}
-                  </div>
-                </td>
-              ))}
+              <td style={{ padding: "4px 4px", fontWeight: 600, color: "#78350f", borderBottom: "1px solid #d4a57422" }}>
+                {t.icon} {t.name}
+              </td>
+              {t.levels.map((l, i) => {
+                const desc = FAVOR_DESCRIPTIONS[k]?.[i] || "";
+                return (
+                  <td key={i} style={{
+                    padding: "3px 4px", textAlign: "center",
+                    opacity: i < fca ? 1 : 0.2, color: "#5c3a1e",
+                    borderBottom: "1px solid #d4a57422",
+                  }}>
+                    <Tooltip text={desc}>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{l}</div>
+                        {/* Player markers on this level */}
+                        <div style={{ display: "flex", gap: 1, justifyContent: "center", marginTop: 1 }}>
+                          {gs.players.filter(p => p.favors[k] === i + 1).map(p => (
+                            <div key={p.index} style={{
+                              width: 8, height: 8, borderRadius: "50%",
+                              background: p.color.bg, border: `1px solid ${p.color.light}`,
+                            }} />
+                          ))}
+                        </div>
+                      </div>
+                    </Tooltip>
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>
@@ -727,27 +1015,53 @@ function FavorTablePanel({ gs }) {
 }
 
 // ============================================================
-// BUILDING STOCK
+// BUILDING STOCK — with tooltips, costs as cubes
 // ============================================================
 
 function BuildingStockPanel({ buildingStock }) {
   return (
-    <div style={{ background: "rgba(120,80,40,0.06)", borderRadius: 10, padding: 10, border: "1px solid #d4a57444" }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "#78350f", marginBottom: 4 }}>BUILDING STOCK</div>
+    <div style={{
+      background: "rgba(120,80,40,0.06)", borderRadius: 10, padding: 10,
+      border: "1px solid #d4a57444", flex: "1 1 340px",
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "#78350f", marginBottom: 6 }}>🏗️ BUILDING STOCK</div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         {Object.entries(buildingStock).map(([type, buildings]) => (
           <div key={type}>
             <div style={{
               fontSize: 10, fontWeight: 700, color: (TC[type] || TC.empty).border,
-              marginBottom: 2, textTransform: "capitalize",
+              marginBottom: 3, textTransform: "capitalize",
             }}>{type} ({buildings.length})</div>
-            <div style={{ display: "flex", gap: 2, flexWrap: "wrap", maxWidth: 260 }}>
-              {buildings.map((b) => (
-                <div key={b.id} title={b.description || b.name} style={{
-                  background: (TC[type] || TC.empty).bg, border: `1px solid ${(TC[type] || TC.empty).border}`,
-                  borderRadius: 3, padding: "1px 4px", fontSize: 9, fontWeight: 600, color: "#3d2a14",
-                }}>{b.name}</div>
-              ))}
+            <div style={{ display: "flex", gap: 3, flexWrap: "wrap", maxWidth: 320 }}>
+              {buildings.map(b => {
+                const bInfo = BLDG_ICONS[b.id] || {};
+                const tooltipText = `${b.name}${b.description ? " — " + b.description : ""}${b.cost ? "\nCost: " + Object.entries(b.cost).map(([r, n]) => `${n} ${r}`).join(", ") : ""}${b.vp ? ` | ${b.vp} VP` : ""}`;
+                return (
+                  <Tooltip key={b.id} text={tooltipText}>
+                    <div style={{
+                      background: (TC[type] || TC.empty).bg,
+                      border: `1px solid ${(TC[type] || TC.empty).border}`,
+                      borderRadius: 4, padding: "2px 5px", fontSize: 9, fontWeight: 600,
+                      color: "#3d2a14", display: "flex", flexDirection: "column", gap: 1,
+                      minWidth: 54, textAlign: "center",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 2, justifyContent: "center" }}>
+                        {bInfo.icon && <span style={{ fontSize: 10 }}>{bInfo.icon}</span>}
+                        <span>{b.name}</span>
+                      </div>
+                      {bInfo.short && (
+                        <div style={{ fontSize: 7, color: "#5c3a1e99" }}>{bInfo.short}</div>
+                      )}
+                      {b.cost && (
+                        <CostDisplay cost={b.cost} style={{ justifyContent: "center" }} />
+                      )}
+                      {b.vp && (
+                        <div style={{ fontSize: 7, color: "#78350f", fontWeight: 700 }}>{b.vp}VP</div>
+                      )}
+                    </div>
+                  </Tooltip>
+                );
+              })}
             </div>
           </div>
         ))}
@@ -767,9 +1081,14 @@ function GameLog({ logs }) {
   }, [logs]);
 
   return (
-    <div style={{ background: "rgba(120,80,40,0.06)", borderRadius: 10, padding: 10, border: "1px solid #d4a57444" }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "#78350f", marginBottom: 4 }}>LOG</div>
-      <div ref={ref} style={{ maxHeight: 200, overflowY: "auto", fontSize: 11, color: "#5c3a1e", lineHeight: 1.4 }}>
+    <div style={{
+      background: "rgba(120,80,40,0.06)", borderRadius: 10, padding: 10,
+      border: "1px solid #d4a57444",
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "#78350f", marginBottom: 4 }}>📜 LOG</div>
+      <div ref={ref} style={{
+        maxHeight: 180, overflowY: "auto", fontSize: 11, color: "#5c3a1e", lineHeight: 1.4,
+      }}>
         {logs.map((e, i) => (
           <div key={i} style={{
             borderBottom: "1px solid #d4a57411", padding: "1px 0",
@@ -788,10 +1107,13 @@ function GameLog({ logs }) {
 
 function PassingScale({ gs }) {
   return (
-    <div style={{ display: "flex", gap: 3, alignItems: "center", padding: "2px 8px", fontSize: 11, color: "#78350f" }}>
-      <span style={{ fontWeight: 700, marginRight: 3 }}>Pass:</span>
+    <div style={{
+      display: "flex", gap: 3, alignItems: "center", padding: "2px 8px",
+      fontSize: 11, color: "#78350f",
+    }}>
+      <span style={{ fontWeight: 700, marginRight: 3 }}>Pass order:</span>
       {gs.passing_scale.map((ps, i) => {
-        const c = ps !== null ? gs.players.find((p) => p.index === ps)?.color : null;
+        const c = ps !== null ? gs.players.find(p => p.index === ps)?.color : null;
         return (
           <div key={i} style={{
             width: 24, height: 24, borderRadius: 5,
@@ -817,6 +1139,7 @@ function GameBoard({ game }) {
   if (!gs) return <div style={{ textAlign: "center", padding: 40, color: "#78350f" }}>Loading game state...</div>;
 
   const myIdx = gs.your_player_idx;
+  const actions = gs.valid_actions || [];
 
   // Determine who is "active" (whose turn it is)
   let activeIdx = null;
@@ -838,6 +1161,9 @@ function GameBoard({ game }) {
     activeIdx = gs.current_player_idx;
   }
 
+  // Road placement actions for interactive road
+  const roadPlaceActions = actions.filter(a => a.kind === "place_worker");
+
   return (
     <div style={{
       minHeight: "100vh",
@@ -845,34 +1171,55 @@ function GameBoard({ game }) {
       fontFamily: "'Crimson Text','Georgia',serif", color: "#3d2a14",
     }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;800&family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&display=swap');*{box-sizing:border-box;}::-webkit-scrollbar{height:5px;width:5px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:#c4995a55;border-radius:3px;}`}</style>
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 10px" }}>
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "10px 10px" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+          {/* Header */}
+          <div style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            flexWrap: "wrap", gap: 6,
+          }}>
             <div>
-              <h1 style={{ fontFamily: "'Cinzel','Palatino Linotype',serif", fontSize: 22, color: "#78350f", margin: 0 }}>CAYLUS</h1>
-              <span style={{ fontSize: 11, color: "#92400e88" }}>Turn {gs.turn} | Room: {game.roomCode}</span>
+              <h1 style={{
+                fontFamily: "'Cinzel','Palatino Linotype',serif",
+                fontSize: 22, color: "#78350f", margin: 0,
+              }}>🏰 CAYLUS</h1>
+              <span style={{ fontSize: 11, color: "#92400e88" }}>
+                Turn {gs.turn} | Room: {game.roomCode}
+              </span>
             </div>
             <PhaseTracker currentPhase={gs.current_phase} />
           </div>
 
+          {/* Turn order bar with all players' resources */}
+          <TurnOrderBar gs={gs} activeIdx={activeIdx} myIdx={myIdx} />
+
+          {/* Action panel */}
           <ActionPanel game={game} gs={gs} submitAction={game.submitAction} />
+
+          {/* Passing scale */}
           <PassingScale gs={gs} />
 
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {gs.players.map((pl) => (
-              <PlayerPanel key={pl.index} player={pl} isActive={pl.index === activeIdx} isYou={pl.index === myIdx} />
-            ))}
-          </div>
-
+          {/* Special buildings */}
           <SpecialBuildingsPanel gs={gs} />
-          <RoadPanel gs={gs} />
+
+          {/* Interactive Road */}
+          <RoadPanel
+            gs={gs}
+            validPlaceActions={game.yourTurn ? roadPlaceActions : []}
+            onPlaceWorker={(action) => game.submitAction(action)}
+            yourTurn={game.yourTurn}
+          />
+
+          {/* Castle */}
           <CastlePanel gs={gs} />
 
+          {/* Favor table + Building stock side by side */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <div style={{ flex: "1 1 300px" }}><FavorTablePanel gs={gs} /></div>
-            <div style={{ flex: "1 1 300px" }}><BuildingStockPanel buildingStock={gs.building_stock} /></div>
+            <FavorTablePanel gs={gs} />
+            <BuildingStockPanel buildingStock={gs.building_stock} />
           </div>
 
+          {/* Game log */}
           <GameLog logs={game.gameLogs} />
         </div>
       </div>
