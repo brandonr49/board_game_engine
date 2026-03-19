@@ -83,18 +83,48 @@ const CASTLE_SECTIONS = {
   towers:  { name: "Towers",  capacity: 14, vpPerBatch: 3 },
 };
 
+// Favor track levels: each level has a rich display (cubes) + text fallback + hover description
 const FAVOR_TRACKS = {
-  prestige:  { name: "Prestige",  icon: "⭐", levels: ["1VP","2VP","3VP","4VP","5VP"] },
-  deniers:   { name: "Deniers",   icon: "💰", levels: ["3$","4$","5$","6$","7$"] },
-  resources: { name: "Resources", icon: "📦", levels: ["1F","W∣S","1C","swap","1G"] },
-  buildings: { name: "Buildings", icon: "🏗️", levels: ["—","Carp−1","Mason−1","Lawyer","Archi−1"] },
-};
-
-const FAVOR_DESCRIPTIONS = {
-  prestige:  ["Gain 1 VP","Gain 2 VP","Gain 3 VP","Gain 4 VP","Gain 5 VP"],
-  deniers:   ["Gain 3$","Gain 4$","Gain 5$","Gain 6$","Gain 7$"],
-  resources: ["Gain 1 food","Gain 1 wood OR 1 stone","Gain 1 cloth","Swap: pay 1 resource → gain 2 of another","Gain 1 gold"],
-  buildings: ["No effect","Build wood bldg (−1 resource cost)","Build stone bldg (−1 resource cost)","Use Lawyer effect (transform building)","Build prestige bldg (−1 resource cost)"],
+  prestige: {
+    name: "Prestige", icon: "⭐",
+    levels: [
+      { cubes: null, text: "1VP",  desc: "Gain 1 victory point" },
+      { cubes: null, text: "2VP",  desc: "Gain 2 victory points" },
+      { cubes: null, text: "3VP",  desc: "Gain 3 victory points" },
+      { cubes: null, text: "4VP",  desc: "Gain 4 victory points" },
+      { cubes: null, text: "5VP",  desc: "Gain 5 victory points" },
+    ],
+  },
+  deniers: {
+    name: "Deniers", icon: "💰",
+    levels: [
+      { cubes: null, text: "3$",  desc: "Gain 3 deniers" },
+      { cubes: null, text: "4$",  desc: "Gain 4 deniers" },
+      { cubes: null, text: "5$",  desc: "Gain 5 deniers" },
+      { cubes: null, text: "6$",  desc: "Gain 6 deniers" },
+      { cubes: null, text: "7$",  desc: "Gain 7 deniers" },
+    ],
+  },
+  resources: {
+    name: "Resources", icon: "📦",
+    levels: [
+      { cubes: [{food:1}],                 text: null, desc: "Gain 1 food" },
+      { cubes: [{wood:1},"or",{stone:1}],  text: null, desc: "Gain 1 wood OR 1 stone (your choice)" },
+      { cubes: [{cloth:1}],                text: null, desc: "Gain 1 cloth" },
+      { cubes: ["□","→","□□"],             text: null, desc: "Swap: pay 1 resource → gain 2 of a different type" },
+      { cubes: [{gold:1}],                 text: null, desc: "Gain 1 gold" },
+    ],
+  },
+  buildings: {
+    name: "Buildings", icon: "🏗️",
+    levels: [
+      { cubes: null, text: "—",       desc: "No effect" },
+      { cubes: null, text: "🔨−1",    desc: "Build a wood (brown) building with 1 fewer resource" },
+      { cubes: null, text: "🧱−1",    desc: "Build a stone (grey) building with 1 fewer resource" },
+      { cubes: null, text: "⚖️",      desc: "Use the Lawyer effect: transform a building to residential" },
+      { cubes: null, text: "🏛−1",    desc: "Build a prestige (blue) building with 1 fewer resource" },
+    ],
+  },
 };
 
 const PHASES = [
@@ -963,30 +993,32 @@ function FavorTablePanel({ gs }) {
               <td style={{ padding: "4px 4px", fontWeight: 600, color: "#78350f", borderBottom: "1px solid #d4a57422" }}>
                 {t.icon} {t.name}
               </td>
-              {t.levels.map((l, i) => {
-                const desc = FAVOR_DESCRIPTIONS[k]?.[i] || "";
-                return (
-                  <td key={i} style={{
-                    padding: "3px 4px", textAlign: "center",
-                    opacity: i < fca ? 1 : 0.2, color: "#5c3a1e",
-                    borderBottom: "1px solid #d4a57422",
-                  }}>
-                    <Tooltip text={desc}>
-                      <div>
-                        <div style={{ fontWeight: 600 }}>{l}</div>
-                        <div style={{ display: "flex", gap: 1, justifyContent: "center", marginTop: 1 }}>
-                          {gs.players.filter(p => p.favors[k] === i + 1).map(p => (
-                            <div key={p.index} style={{
-                              width: 8, height: 8, borderRadius: "50%",
-                              background: p.color.bg, border: `1px solid ${p.color.light}`,
-                            }} />
-                          ))}
-                        </div>
+              {t.levels.map((lvl, i) => (
+                <td key={i} style={{
+                  padding: "3px 4px", textAlign: "center",
+                  opacity: i < fca ? 1 : 0.2, color: "#5c3a1e",
+                  borderBottom: "1px solid #d4a57422",
+                }}>
+                  <Tooltip text={lvl.desc}>
+                    <div>
+                      <div style={{ fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 1, minHeight: 16 }}>
+                        {lvl.cubes
+                          ? <CubeShortDisplay items={lvl.cubes} size={9} />
+                          : <span>{lvl.text}</span>
+                        }
                       </div>
-                    </Tooltip>
-                  </td>
-                );
-              })}
+                      <div style={{ display: "flex", gap: 1, justifyContent: "center", marginTop: 1 }}>
+                        {gs.players.filter(p => p.favors[k] === i + 1).map(p => (
+                          <div key={p.index} style={{
+                            width: 8, height: 8, borderRadius: "50%",
+                            background: p.color.bg, border: `1px solid ${p.color.light}`,
+                          }} />
+                        ))}
+                      </div>
+                    </div>
+                  </Tooltip>
+                </td>
+              ))}
             </tr>
           ))}
         </tbody>
