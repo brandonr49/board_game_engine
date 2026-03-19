@@ -12,6 +12,8 @@ For implementation details, see the [Integration Guide](CLAUDE.md).
 | Arboretum | 2–4 | — | ✓ |
 | Lost Cities | 2 | — | ✓ |
 | In the Year of the Dragon | 2–5 | ✓ | ✓ |
+| Caylus | 2–5 | — | ✓ |
+| TAMSK | 2 | — | ✓ |
 
 ## How It Works
 

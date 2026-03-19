@@ -375,6 +375,7 @@ async def run_server(host="0.0.0.0", port=8765):
     from server.arboretum.engine import ArboretumEngine
     from server.lostcities.engine import LostCitiesEngine
     from server.caylus.engine import CaylusEngine
+    from server.tamsk.engine import TamskEngine
 
     server = GameServer()
     server.register_engine("dragon", DragonEngine)
@@ -382,6 +383,7 @@ async def run_server(host="0.0.0.0", port=8765):
     server.register_engine("arboretum", ArboretumEngine)
     server.register_engine("lostcities", LostCitiesEngine)
     server.register_engine("caylus", CaylusEngine)
+    server.register_engine("tamsk", TamskEngine)
 
     print(f"Game server starting on ws://{host}:{port}")
     print(f"Registered games: {list(server.engines.keys())}")

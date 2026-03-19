@@ -1,0 +1,970 @@
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+
+// ─── CONFIGURATION ─────────────────────────────────────────────────
+const WS_URL = `ws://${window.location.hostname}:8765`;
+
+// ─── CONSTANTS ─────────────────────────────────────────────────────
+
+const BOARD_RADIUS = 3;
+
+// Axial hex direction vectors
+const HEX_DIRS = [[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
+
+// Corner positions matching server order
+const CORNERS = [[3,0],[0,3],[-3,3],[-3,0],[0,-3],[3,-3]];
+
+const COLORS = {
+  black: { main: "#2c3e50", light: "#4a6a82", ring: "#1a252f" },
+  red:   { main: "#c0392b", light: "#e06050", ring: "#8e2a20" },
+};
+
+const HEX_SIZE = 42;
+const SQRT3 = Math.sqrt(3);
+
+// ─── HEX MATH ──────────────────────────────────────────────────────
+
+function hexKey(q, r) { return `${q},${r}`; }
+function parseHex(key) { const [q, r] = key.split(",").map(Number); return [q, r]; }
+
+function hexDistance(q1, r1, q2, r2) {
+  const dq = q1 - q2, dr = r1 - r2;
+  return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr));
+}
+
+function isValid(q, r) { return hexDistance(0, 0, q, r) <= BOARD_RADIUS; }
+
+// Flat-top hex: axial to pixel
+function hexToPixel(q, r) {
+  return {
+    x: HEX_SIZE * 1.5 * q,
+    y: HEX_SIZE * (SQRT3 / 2 * q + SQRT3 * r),
+  };
+}
+
+// Hex polygon points (flat-top)
+function hexPoints(cx, cy) {
+  const pts = [];
+  for (let i = 0; i < 6; i++) {
+    const angle = (Math.PI / 180) * (60 * i);
+    pts.push(`${cx + HEX_SIZE * Math.cos(angle)},${cy + HEX_SIZE * Math.sin(angle)}`);
+  }
+  return pts.join(" ");
+}
+
+// Generate all 37 board positions
+function allPositions() {
+  const positions = [];
+  for (let q = -BOARD_RADIUS; q <= BOARD_RADIUS; q++) {
+    for (let r = -BOARD_RADIUS; r <= BOARD_RADIUS; r++) {
+      if (isValid(q, r)) positions.push([q, r]);
+    }
+  }
+  return positions;
+}
+
+function ringCapacity(q, r) {
+  const d = hexDistance(0, 0, q, r);
+  return d === 0 ? 4 : d === 1 ? 3 : d === 2 ? 2 : 1;
+}
+
+const ALL_POSITIONS = allPositions();
+
+// ─── THEME & STYLES ────────────────────────────────────────────────
+
+const font = `'Cinzel', Georgia, serif`;
+const S = {
+  app: {
+    fontFamily: font, minHeight: "100vh",
+    background: "linear-gradient(160deg, #0d1117 0%, #161b22 30%, #0d1117 100%)",
+    color: "#e8d5a3", position: "relative", overflow: "hidden",
+  },
+  overlay: {
+    position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0,
+    backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 35px, rgba(201,168,76,0.02) 35px, rgba(201,168,76,0.02) 70px)`,
+  },
+  content: { position: "relative", zIndex: 1, maxWidth: 1100, margin: "0 auto", padding: "16px 20px" },
+  card: {
+    background: "linear-gradient(135deg, rgba(22,27,34,0.95) 0%, rgba(13,17,23,0.98) 100%)",
+    border: "1px solid #30363d", borderRadius: 8, padding: 20, marginBottom: 16,
+    boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+  },
+  cardTitle: {
+    fontFamily: font, fontSize: 18, color: "#c9a84c",
+    marginBottom: 12, borderBottom: "1px solid #30363d", paddingBottom: 8,
+  },
+  btn: {
+    fontFamily: font, fontSize: 14, padding: "8px 20px", borderRadius: 6,
+    border: "1px solid #30363d",
+    background: "linear-gradient(135deg, #21262d 0%, #161b22 100%)",
+    color: "#e8d5a3", cursor: "pointer", transition: "all 0.2s", fontWeight: 600,
+  },
+  btnP: { background: "linear-gradient(135deg, #c9a84c 0%, #a08030 100%)", color: "#0d1117", border: "1px solid #c9a84c" },
+  btnDanger: { background: "linear-gradient(135deg, #c0392b 0%, #962d22 100%)", color: "#fff", border: "1px solid #c0392b" },
+  dis: { opacity: 0.4, cursor: "not-allowed" },
+  title: {
+    fontFamily: font, fontSize: 36, fontWeight: 700, color: "#c9a84c",
+    textShadow: "0 2px 8px rgba(0,0,0,0.5)", margin: 0, letterSpacing: 3,
+  },
+  input: {
+    flex: 1, fontFamily: font, fontSize: 14, padding: "8px 12px",
+    borderRadius: 6, border: "1px solid #30363d",
+    background: "rgba(0,0,0,0.3)", color: "#e8d5a3", outline: "none",
+  },
+};
+
+function bs(primary, disabled) {
+  return { ...S.btn, ...(primary ? S.btnP : {}), ...(disabled ? S.dis : {}) };
+}
+
+// ─── UTILITIES ─────────────────────────────────────────────────────
+
+function getMyPlayerIdx(state) {
+  if (!state || !state.players) return 0;
+  const idx = state.players.findIndex(p => p.player_id === state.your_player_id);
+  return idx >= 0 ? idx : 0;
+}
+
+function formatTime(seconds) {
+  if (seconds <= 0) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+// ─── WEBSOCKET HOOK ────────────────────────────────────────────────
+
+function useGameConnection() {
+  const [connected, setConnected] = useState(false);
+  const [roomCode, setRoomCode] = useState(null);
+  const [playerId, setPlayerId] = useState(null);
+  const [token, setToken] = useState(null);
+  const [isHost, setIsHost] = useState(false);
+  const [lobby, setLobby] = useState([]);
+  const [gameStarted, setGameStarted] = useState(false);
+  const [gameState, setGameState] = useState(null);
+  const [phaseInfo, setPhaseInfo] = useState(null);
+  const [yourTurn, setYourTurn] = useState(false);
+  const [waitingFor, setWaitingFor] = useState([]);
+  const [gameLogs, setGameLogs] = useState([]);
+  const [gameOver, setGameOver] = useState(false);
+  const [error, setError] = useState(null);
+
+  const wsRef = useRef(null);
+  const tokenRef = useRef(null);
+
+  const send = useCallback((msg) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN)
+      wsRef.current.send(JSON.stringify(msg));
+  }, []);
+
+  const connect = useCallback((onOpen) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) { onOpen?.(); return; }
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setConnected(true);
+      setError(null);
+      if (tokenRef.current)
+        ws.send(JSON.stringify({ type: "reconnect", token: tokenRef.current }));
+      onOpen?.();
+    };
+
+    ws.onmessage = (evt) => {
+      const msg = JSON.parse(evt.data);
+      switch (msg.type) {
+        case "created":
+        case "joined":
+          setRoomCode(msg.room_code);
+          setPlayerId(msg.player_id);
+          setToken(msg.token);
+          tokenRef.current = msg.token;
+          ws.send(JSON.stringify({ type: "auth", token: msg.token }));
+          break;
+        case "authenticated":
+          setIsHost(msg.is_host);
+          setGameStarted(msg.game_started);
+          break;
+        case "lobby_update":
+          setLobby(msg.players);
+          if (msg.game_started !== undefined) setGameStarted(msg.game_started);
+          break;
+        case "game_started":
+          setGameStarted(true);
+          break;
+        case "game_state":
+          setGameState(msg.state);
+          setPhaseInfo(msg.phase_info);
+          setYourTurn(msg.your_turn);
+          setWaitingFor(msg.waiting_for || []);
+          break;
+        case "game_log":
+          setGameLogs((prev) => [...prev, ...msg.messages]);
+          break;
+        case "game_over":
+          setGameOver(true);
+          break;
+        case "action_error":
+          setError(msg.message);
+          break;
+        case "error":
+          setError(msg.message);
+          break;
+      }
+    };
+
+    ws.onclose = () => {
+      setConnected(false);
+      setTimeout(() => { if (tokenRef.current) connect(); }, 2000);
+    };
+  }, []);
+
+  const createRoom = (name) => {
+    connect(() => send({ type: "create", game: "tamsk", name }));
+  };
+  const joinRoom = (code, name) => {
+    connect(() => send({ type: "join", room_code: code.toUpperCase(), name }));
+  };
+  const startGame = () => send({ type: "start" });
+  const submitAction = (action) => send({ type: "action", action });
+
+  return {
+    connected, roomCode, playerId, token, isHost, lobby,
+    gameStarted, gameState, phaseInfo, yourTurn, waitingFor,
+    gameLogs, gameOver, error,
+    createRoom, joinRoom, startGame, submitAction,
+  };
+}
+
+// ─── HOURGLASS TIMER HOOK ──────────────────────────────────────────
+
+function useTimers(hourglasses, level) {
+  const [now, setNow] = useState(Date.now() / 1000);
+
+  useEffect(() => {
+    if (level < 2 || !hourglasses) return;
+    const id = setInterval(() => setNow(Date.now() / 1000), 200);
+    return () => clearInterval(id);
+  }, [level, hourglasses]);
+
+  const getRemaining = useCallback((h) => {
+    if (!h || h.is_dead) return 0;
+    if (!h.timer_started_at) return h.timer_remaining;
+    const elapsed = now - h.timer_started_at;
+    return Math.max(0, h.timer_remaining - elapsed);
+  }, [now]);
+
+  return { getRemaining };
+}
+
+// ─── HEX CELL COMPONENT ───────────────────────────────────────────
+
+function HexCell({ q, r, space, hourglass, isValidDest, isSelected, onClick, level, getRemaining, myColor }) {
+  const { x, y } = hexToPixel(q, r);
+  const cap = space?.capacity || ringCapacity(q, r);
+  const rings = space?.rings || [];
+  const isCorner = CORNERS.some(([cq, cr]) => cq === q && cr === r);
+
+  let fillColor = "#3a2f1e";
+  const dist = hexDistance(0, 0, q, r);
+  if (dist === 0) fillColor = "#5a4a2a";
+  else if (dist === 1) fillColor = "#4a3d22";
+  else if (dist === 2) fillColor = "#3a3018";
+
+  let strokeColor = "#6b5a3a";
+  let strokeWidth = 1.5;
+  if (isValidDest) {
+    strokeColor = "#4caf50";
+    strokeWidth = 3;
+    fillColor = "#2a3a20";
+  }
+  if (isSelected) {
+    strokeColor = "#ffeb3b";
+    strokeWidth = 3;
+  }
+
+  const remaining = hourglass ? getRemaining(hourglass) : 0;
+  const timerFrac = hourglass && !hourglass.is_dead ? remaining / 180 : 0;
+
+  return (
+    <g
+      onClick={onClick}
+      style={{ cursor: onClick ? "pointer" : "default" }}
+    >
+      {/* Hex background */}
+      <polygon
+        points={hexPoints(x, y)}
+        fill={fillColor}
+        stroke={strokeColor}
+        strokeWidth={strokeWidth}
+      />
+
+      {/* Capacity label */}
+      <text
+        x={x + HEX_SIZE * 0.6}
+        y={y - HEX_SIZE * 0.55}
+        fill="#88774488"
+        fontSize={10}
+        textAnchor="middle"
+        fontFamily={font}
+      >
+        {cap}
+      </text>
+
+      {/* Ring indicators */}
+      {rings.map((color, i) => {
+        const ringY = y + HEX_SIZE * 0.42 - i * 5;
+        return (
+          <circle
+            key={i}
+            cx={x}
+            cy={ringY}
+            r={HEX_SIZE * 0.28 - i * 2}
+            fill="none"
+            stroke={COLORS[color]?.main || "#888"}
+            strokeWidth={3}
+            opacity={0.9}
+          />
+        );
+      })}
+
+      {/* Ring count */}
+      {rings.length > 0 && (
+        <text
+          x={x + HEX_SIZE * 0.6}
+          y={y + HEX_SIZE * 0.7}
+          fill="#aaa"
+          fontSize={9}
+          textAnchor="middle"
+          fontFamily={font}
+        >
+          {rings.length}/{cap}
+        </text>
+      )}
+
+      {/* Hourglass */}
+      {hourglass && (
+        <g>
+          {/* Hourglass body — two triangles */}
+          <polygon
+            points={`${x},${y - 18} ${x - 10},${y - 4} ${x + 10},${y - 4}`}
+            fill={hourglass.is_dead ? "#555" : COLORS[hourglass.color]?.main}
+            stroke={hourglass.is_dead ? "#777" : COLORS[hourglass.color]?.light}
+            strokeWidth={1.5}
+            opacity={hourglass.is_dead ? 0.5 : 1}
+          />
+          <polygon
+            points={`${x},${y + 8} ${x - 10},${y - 6} ${x + 10},${y - 6}`}
+            fill={hourglass.is_dead ? "#555" : COLORS[hourglass.color]?.main}
+            stroke={hourglass.is_dead ? "#777" : COLORS[hourglass.color]?.light}
+            strokeWidth={1.5}
+            opacity={hourglass.is_dead ? 0.5 : 1}
+          />
+
+          {/* Dead X */}
+          {hourglass.is_dead && (
+            <text
+              x={x}
+              y={y + 2}
+              fill="#e74c3c"
+              fontSize={22}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontWeight="bold"
+            >
+              X
+            </text>
+          )}
+
+          {/* Timer text (Level 2/3) */}
+          {level >= 2 && !hourglass.is_dead && (
+            <text
+              x={x}
+              y={y + 22}
+              fill={timerFrac > 0.5 ? "#4caf50" : timerFrac > 0.2 ? "#ff9800" : "#e74c3c"}
+              fontSize={10}
+              textAnchor="middle"
+              fontFamily="monospace"
+              fontWeight="bold"
+            >
+              {formatTime(remaining)}
+            </text>
+          )}
+
+          {/* Hourglass label */}
+          <text
+            x={x}
+            y={y - 22}
+            fill={hourglass.is_dead ? "#777" : COLORS[hourglass.color]?.light}
+            fontSize={8}
+            textAnchor="middle"
+            fontFamily={font}
+            fontWeight="bold"
+          >
+            {hourglass.id.replace("_", " ")}
+          </text>
+        </g>
+      )}
+    </g>
+  );
+}
+
+// ─── HEX BOARD ─────────────────────────────────────────────────────
+
+function HexBoard({ state, selectedHourglass, setSelectedHourglass, submitAction, myColor, level, getRemaining }) {
+  const board = state.board;
+  const hourglasses = state.hourglasses || {};
+  const validActions = state.valid_actions || [];
+
+  // Build position → hourglass lookup
+  const posToHourglass = useMemo(() => {
+    const map = {};
+    for (const h of Object.values(hourglasses)) {
+      if (h.position) map[h.position] = h;
+    }
+    return map;
+  }, [hourglasses]);
+
+  // Valid destinations for selected hourglass
+  const validDests = useMemo(() => {
+    if (!selectedHourglass) return new Set();
+    return new Set(
+      validActions
+        .filter(a => a.kind === "move_hourglass" && a.hourglass_id === selectedHourglass)
+        .map(a => a.to)
+    );
+  }, [selectedHourglass, validActions]);
+
+  // Which hourglasses can be moved?
+  const movableHourglasses = useMemo(() => {
+    return new Set(
+      validActions
+        .filter(a => a.kind === "move_hourglass")
+        .map(a => a.hourglass_id)
+    );
+  }, [validActions]);
+
+  // Compute SVG bounds
+  const padding = 40;
+  const positions = ALL_POSITIONS.map(([q, r]) => hexToPixel(q, r));
+  const minX = Math.min(...positions.map(p => p.x)) - HEX_SIZE - padding;
+  const maxX = Math.max(...positions.map(p => p.x)) + HEX_SIZE + padding;
+  const minY = Math.min(...positions.map(p => p.y)) - HEX_SIZE - padding;
+  const maxY = Math.max(...positions.map(p => p.y)) + HEX_SIZE + padding;
+
+  const handleCellClick = (q, r) => {
+    const key = hexKey(q, r);
+    const hg = posToHourglass[key];
+
+    // If clicking a valid destination, move there
+    if (selectedHourglass && validDests.has(key)) {
+      submitAction({ kind: "move_hourglass", hourglass_id: selectedHourglass, to: key });
+      setSelectedHourglass(null);
+      return;
+    }
+
+    // If clicking one of my movable hourglasses, select it
+    if (hg && hg.color === myColor && movableHourglasses.has(hg.id)) {
+      setSelectedHourglass(selectedHourglass === hg.id ? null : hg.id);
+      return;
+    }
+
+    // Deselect
+    setSelectedHourglass(null);
+  };
+
+  return (
+    <svg
+      viewBox={`${minX} ${minY} ${maxX - minX} ${maxY - minY}`}
+      style={{ width: "100%", maxHeight: 520, display: "block" }}
+    >
+      {ALL_POSITIONS.map(([q, r]) => {
+        const key = hexKey(q, r);
+        const hg = posToHourglass[key];
+        return (
+          <HexCell
+            key={key}
+            q={q}
+            r={r}
+            space={board[key]}
+            hourglass={hg}
+            isValidDest={validDests.has(key)}
+            isSelected={hg && selectedHourglass === hg.id}
+            onClick={() => handleCellClick(q, r)}
+            level={level}
+            getRemaining={getRemaining}
+            myColor={myColor}
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
+// ─── PLAYER PANEL ──────────────────────────────────────────────────
+
+function PlayerPanel({ player, isCurrent, isMe, hourglasses, level, getRemaining }) {
+  const color = COLORS[player.color];
+  const placed = 32 - player.rings_remaining;
+  const myHourglasses = Object.values(hourglasses || {}).filter(h => h.color === player.color);
+
+  return (
+    <div style={{
+      padding: "12px 16px", borderRadius: 8,
+      background: isCurrent ? `${color.main}22` : "rgba(0,0,0,0.2)",
+      border: `2px solid ${isCurrent ? color.main : "#30363d"}`,
+      flex: 1,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{
+            width: 14, height: 14, borderRadius: "50%",
+            background: color.main, border: `2px solid ${color.light}`,
+          }} />
+          <span style={{ fontSize: 16, fontWeight: 700, color: color.light }}>
+            {player.name} {isMe ? "(you)" : ""}
+          </span>
+        </div>
+        {isCurrent && (
+          <span style={{
+            padding: "2px 10px", borderRadius: 10, fontSize: 11,
+            background: `${color.main}44`, color: color.light,
+          }}>
+            Current Turn
+          </span>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 16, fontSize: 13, color: "#bbb" }}>
+        <div>Rings placed: <strong style={{ color: color.light }}>{placed}</strong></div>
+        <div>Remaining: <strong style={{ color: "#e8d5a3" }}>{player.rings_remaining}</strong></div>
+      </div>
+      {level >= 2 && (
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          {myHourglasses.map(h => (
+            <div key={h.id} style={{
+              padding: "2px 8px", borderRadius: 4, fontSize: 10,
+              background: h.is_dead ? "rgba(231,76,60,0.2)" : "rgba(39,174,96,0.15)",
+              border: `1px solid ${h.is_dead ? "#e74c3c44" : "#27ae6044"}`,
+              color: h.is_dead ? "#e74c3c" : "#27ae60",
+            }}>
+              {h.id.split("_")[1]}: {h.is_dead ? "DEAD" : formatTime(getRemaining(h))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── LOBBY ─────────────────────────────────────────────────────────
+
+function Lobby({ game }) {
+  const [name, setName] = useState("");
+  const [joinCode, setJoinCode] = useState("");
+  const [mode, setMode] = useState(null);
+
+  if (game.roomCode) {
+    return (
+      <div style={S.app}>
+        <div style={S.overlay} />
+        <div style={S.content}>
+          <h1 style={{ ...S.title, textAlign: "center", marginBottom: 24 }}>TAMSK</h1>
+          <div style={S.card}>
+            <div style={S.cardTitle}>
+              Room: <span style={{ letterSpacing: 3, fontSize: 22 }}>{game.roomCode}</span>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ color: "#999", fontSize: 13, marginBottom: 8 }}>Players:</div>
+              {game.lobby.map((p) => (
+                <div key={p.player_id} style={{
+                  padding: "6px 12px", marginBottom: 4, borderRadius: 4,
+                  background: p.connected ? "rgba(39,174,96,0.15)" : "rgba(231,76,60,0.15)",
+                  border: `1px solid ${p.connected ? "#27ae6044" : "#e74c3c44"}`,
+                  fontSize: 14,
+                }}>
+                  {p.name} {p.is_host ? "(host)" : ""} {!p.connected ? "(disconnected)" : ""}
+                </div>
+              ))}
+            </div>
+            {game.isHost && game.lobby.length >= 2 && (
+              <button style={bs(true)} onClick={game.startGame}>
+                Start Game
+              </button>
+            )}
+            {game.isHost && game.lobby.length < 2 && (
+              <div style={{ color: "#888", fontSize: 13 }}>
+                Waiting for another player to join...
+              </div>
+            )}
+            {!game.isHost && (
+              <div style={{ color: "#888", fontSize: 13 }}>
+                Waiting for host to start...
+              </div>
+            )}
+          </div>
+          {game.error && (
+            <div style={{ color: "#e74c3c", padding: 12, background: "rgba(231,76,60,0.1)", borderRadius: 6 }}>
+              {game.error}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={S.app}>
+      <div style={S.overlay} />
+      <div style={S.content}>
+        <h1 style={{ ...S.title, textAlign: "center", marginBottom: 8 }}>TAMSK</h1>
+        <p style={{ textAlign: "center", color: "#999", marginBottom: 32, fontSize: 14 }}>
+          A territorial game with time as a special feature
+        </p>
+        {!mode && (
+          <div style={{ ...S.card, display: "flex", gap: 12, justifyContent: "center" }}>
+            <button style={bs(true)} onClick={() => setMode("create")}>Create Room</button>
+            <button style={bs(false)} onClick={() => setMode("join")}>Join Room</button>
+          </div>
+        )}
+        {mode === "create" && (
+          <div style={S.card}>
+            <div style={S.cardTitle}>Create a Room</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input style={S.input} placeholder="Your name" value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && name.trim() && game.createRoom(name.trim())} />
+              <button style={bs(true, !name.trim())} disabled={!name.trim()}
+                onClick={() => game.createRoom(name.trim())}>Create</button>
+            </div>
+          </div>
+        )}
+        {mode === "join" && (
+          <div style={S.card}>
+            <div style={S.cardTitle}>Join a Room</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <input style={{ ...S.input, maxWidth: 140 }} placeholder="Room code"
+                value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} />
+              <input style={S.input} placeholder="Your name" value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && name.trim() && joinCode.trim() && game.joinRoom(joinCode.trim(), name.trim())} />
+              <button style={bs(true, !name.trim() || !joinCode.trim())}
+                disabled={!name.trim() || !joinCode.trim()}
+                onClick={() => game.joinRoom(joinCode.trim(), name.trim())}>Join</button>
+            </div>
+          </div>
+        )}
+        {mode && (
+          <button style={{ ...S.btn, marginTop: 8 }} onClick={() => setMode(null)}>Back</button>
+        )}
+        {game.error && (
+          <div style={{ color: "#e74c3c", padding: 12, marginTop: 12, background: "rgba(231,76,60,0.1)", borderRadius: 6 }}>
+            {game.error}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── CONFIG PHASE ──────────────────────────────────────────────────
+
+function ConfigPhase({ state, submitAction }) {
+  const validActions = state.valid_actions || [];
+  const canSetLevel = validActions.some(a => a.kind === "set_level");
+
+  return (
+    <div style={{ ...S.card, textAlign: "center" }}>
+      <div style={S.cardTitle}>Choose Difficulty Level</div>
+      {canSetLevel ? (
+        <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+          <button
+            style={{ ...S.btn, ...S.btnP, padding: "16px 24px", minWidth: 160 }}
+            onClick={() => submitAction({ kind: "set_level", level: 1 })}
+          >
+            <div style={{ fontSize: 18, marginBottom: 4 }}>Level 1</div>
+            <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.8 }}>No Timers</div>
+          </button>
+          <button
+            style={{ ...S.btn, padding: "16px 24px", minWidth: 160, border: "1px solid #ff9800", color: "#ff9800" }}
+            onClick={() => submitAction({ kind: "set_level", level: 2 })}
+          >
+            <div style={{ fontSize: 18, marginBottom: 4 }}>Level 2</div>
+            <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.8 }}>Timers Active</div>
+          </button>
+          <button
+            style={{ ...S.btn, ...S.btnDanger, padding: "16px 24px", minWidth: 160 }}
+            onClick={() => submitAction({ kind: "set_level", level: 3 })}
+          >
+            <div style={{ fontSize: 18, marginBottom: 4 }}>Level 3</div>
+            <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.8 }}>Full Game</div>
+          </button>
+        </div>
+      ) : (
+        <div style={{ color: "#888", fontSize: 14 }}>Waiting for host to select level...</div>
+      )}
+    </div>
+  );
+}
+
+// ─── GAME BOARD ────────────────────────────────────────────────────
+
+function GameBoard({ game }) {
+  const { gameState: state, phaseInfo, yourTurn, submitAction, gameLogs, gameOver } = game;
+  const [selectedHourglass, setSelectedHourglass] = useState(null);
+  const logRef = useRef(null);
+
+  const myIdx = useMemo(() => getMyPlayerIdx(state), [state]);
+  const oppIdx = 1 - myIdx;
+  const me = state.players[myIdx];
+  const opp = state.players[oppIdx];
+  const level = state.level || 1;
+  const myColor = me.color;
+
+  const { getRemaining } = useTimers(state.hourglasses, level);
+
+  const validActions = state.valid_actions || [];
+  const subPhase = state.sub_phase;
+  const isCurrent = state.current_player === myIdx;
+
+  // Can pass?
+  const canPass = validActions.some(a => a.kind === "pass");
+  // Can place ring?
+  const canPlaceRing = validActions.some(a => a.kind === "place_ring");
+  const canSkipRing = validActions.some(a => a.kind === "skip_ring");
+  // Can activate pressure?
+  const canPressure = validActions.some(a => a.kind === "activate_pressure");
+
+  // Pressure timer state
+  const pressureTimer = state.pressure_timer;
+  const pressureRemaining = useMemo(() => {
+    if (!pressureTimer?.active || !pressureTimer?.started_at) return null;
+    const elapsed = Date.now() / 1000 - pressureTimer.started_at;
+    return Math.max(0, 15 - elapsed);
+  }, [pressureTimer, state]);
+
+  // Clear selection on phase changes
+  useEffect(() => { setSelectedHourglass(null); }, [subPhase, state.current_player]);
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [gameLogs]);
+
+  if (!state.players || !me) {
+    return <div style={S.app}><div style={S.content}><div style={S.card}>Loading game...</div></div></div>;
+  }
+
+  // Config phase
+  if (state.phase === "config") {
+    return (
+      <div style={S.app}>
+        <div style={S.overlay} />
+        <div style={S.content}>
+          <h1 style={{ ...S.title, textAlign: "center", fontSize: 28, marginBottom: 16 }}>TAMSK</h1>
+          <ConfigPhase state={state} submitAction={submitAction} />
+        </div>
+      </div>
+    );
+  }
+
+  // Game over
+  if (state.game_over) {
+    const winner = state.winner;
+    const winnerPlayer = state.players.find(p => p.player_id === winner);
+    return (
+      <div style={S.app}>
+        <div style={S.overlay} />
+        <div style={S.content}>
+          <h1 style={{ ...S.title, textAlign: "center", fontSize: 28, marginBottom: 8 }}>Game Over</h1>
+          <div style={{ textAlign: "center", color: "#999", marginBottom: 16, fontSize: 16 }}>
+            {winnerPlayer ? `${winnerPlayer.name} wins!` : "It's a draw!"}
+          </div>
+
+          <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+            <PlayerPanel player={me} isCurrent={false} isMe hourglasses={state.hourglasses} level={level} getRemaining={getRemaining} />
+            <PlayerPanel player={opp} isCurrent={false} isMe={false} hourglasses={state.hourglasses} level={level} getRemaining={getRemaining} />
+          </div>
+
+          <div style={S.card}>
+            <HexBoard
+              state={state}
+              selectedHourglass={null}
+              setSelectedHourglass={() => {}}
+              submitAction={() => {}}
+              myColor={myColor}
+              level={level}
+              getRemaining={getRemaining}
+            />
+          </div>
+
+          <GameLog logs={gameLogs} logRef={logRef} />
+        </div>
+      </div>
+    );
+  }
+
+  // Active play
+  return (
+    <div style={S.app}>
+      <div style={S.overlay} />
+      <div style={S.content}>
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <h1 style={{ ...S.title, fontSize: 24 }}>TAMSK</h1>
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <div style={{
+              padding: "4px 12px", borderRadius: 12, fontSize: 12,
+              background: `rgba(${level >= 2 ? "255,152,0" : "39,174,96"},0.15)`,
+              border: `1px solid ${level >= 2 ? "#ff980044" : "#27ae6044"}`,
+              color: level >= 2 ? "#ff9800" : "#27ae60",
+            }}>
+              Level {level}
+            </div>
+            <div style={{
+              padding: "4px 12px", borderRadius: 12, fontSize: 12,
+              background: isCurrent ? "rgba(39,174,96,0.2)" : "rgba(255,255,255,0.05)",
+              border: `1px solid ${isCurrent ? "#27ae60" : "#30363d"}`,
+              color: isCurrent ? "#27ae60" : "#888",
+            }}>
+              {isCurrent ? (subPhase === "place_ring" ? "Place a ring" : "Move an hourglass") : `${opp.name}'s turn`}
+            </div>
+          </div>
+        </div>
+
+        {/* Player panels */}
+        <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+          <PlayerPanel player={me} isCurrent={state.current_player === myIdx} isMe hourglasses={state.hourglasses} level={level} getRemaining={getRemaining} />
+          <PlayerPanel player={opp} isCurrent={state.current_player === oppIdx} isMe={false} hourglasses={state.hourglasses} level={level} getRemaining={getRemaining} />
+        </div>
+
+        {/* Pressure timer display */}
+        {pressureTimer?.active && (
+          <div style={{
+            ...S.card, textAlign: "center", padding: 12,
+            border: "1px solid #e74c3c", background: "rgba(231,76,60,0.1)",
+          }}>
+            <span style={{ fontSize: 14, color: "#e74c3c", fontWeight: 700 }}>
+              PRESSURE TIMER: {pressureRemaining !== null ? formatTime(pressureRemaining) : "?"}
+            </span>
+          </div>
+        )}
+
+        {/* Board */}
+        <div style={S.card}>
+          <HexBoard
+            state={state}
+            selectedHourglass={selectedHourglass}
+            setSelectedHourglass={setSelectedHourglass}
+            submitAction={submitAction}
+            myColor={myColor}
+            level={level}
+            getRemaining={getRemaining}
+          />
+        </div>
+
+        {/* Action buttons */}
+        <div style={{ ...S.card, display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+          {subPhase === "move" && isCurrent && (
+            <div style={{ fontSize: 13, color: "#888", padding: "4px 0" }}>
+              {selectedHourglass
+                ? "Click a highlighted space to move there, or click another hourglass"
+                : "Click one of your hourglasses to select it"}
+            </div>
+          )}
+
+          {canPlaceRing && (
+            <button style={bs(true)} onClick={() => submitAction({ kind: "place_ring" })}>
+              Place Ring
+            </button>
+          )}
+          {canSkipRing && (
+            <button style={bs(false)} onClick={() => submitAction({ kind: "skip_ring" })}>
+              Skip Ring
+            </button>
+          )}
+          {canPass && (
+            <button style={{ ...S.btn, color: "#e74c3c", borderColor: "#e74c3c" }}
+              onClick={() => submitAction({ kind: "pass" })}>
+              Pass (No moves)
+            </button>
+          )}
+          {canPressure && (
+            <button style={{ ...S.btn, ...S.btnDanger }}
+              onClick={() => submitAction({ kind: "activate_pressure" })}>
+              Activate Pressure Timer (15s)
+            </button>
+          )}
+        </div>
+
+        {/* Error */}
+        {game.error && (
+          <div style={{ color: "#e74c3c", padding: 12, background: "rgba(231,76,60,0.1)", borderRadius: 6, marginBottom: 12 }}>
+            {game.error}
+          </div>
+        )}
+
+        {/* Game log */}
+        <GameLog logs={gameLogs} logRef={logRef} />
+      </div>
+    </div>
+  );
+}
+
+// ─── GAME LOG ──────────────────────────────────────────────────────
+
+function GameLog({ logs, logRef }) {
+  return (
+    <div style={S.card}>
+      <div style={{ ...S.cardTitle, fontSize: 14 }}>Game Log</div>
+      <div
+        ref={logRef}
+        style={{
+          maxHeight: 160, overflowY: "auto", fontSize: 12, color: "#999",
+          lineHeight: 1.6, padding: "0 4px",
+        }}
+      >
+        {logs.length === 0 && <div>No actions yet.</div>}
+        {logs.map((msg, i) => (
+          <div key={i}>{msg}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── APP ───────────────────────────────────────────────────────────
+
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ ...S.app, padding: 40 }}>
+          <div style={S.card}>
+            <div style={{ color: "#e74c3c", fontSize: 18, marginBottom: 12 }}>GameBoard crashed</div>
+            <pre style={{ color: "#ff6b6b", fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+              {this.state.error.message}{"\n"}{this.state.error.stack}
+            </pre>
+            <div style={{ color: "#999", fontSize: 12, marginTop: 12 }}>
+              State: <pre style={{ fontSize: 10, maxHeight: 300, overflow: "auto", color: "#888" }}>
+                {JSON.stringify(this.props.debugState, null, 2)}
+              </pre>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function App() {
+  const game = useGameConnection();
+
+  if (!game.gameStarted) return <Lobby game={game} />;
+  if (!game.gameState) return <div style={S.app}><div style={S.content}><div style={S.card}>Waiting for game state...</div></div></div>;
+  return (
+    <ErrorBoundary debugState={game.gameState}>
+      <GameBoard game={game} />
+    </ErrorBoundary>
+  );
+}
