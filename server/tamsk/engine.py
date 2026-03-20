@@ -37,6 +37,7 @@ class TamskEngine(GameEngine):
             "hourglasses_moved_initial": [[], []],
             "consecutive_passes": 0,
             "moved_to_space": None,
+            "opponent_ring_space": None,
             "pressure_timer": {
                 "active": False,
                 "started_at": None,
@@ -90,6 +91,10 @@ class TamskEngine(GameEngine):
             return self._apply_place_ring(state, player_id, player_idx, action)
         elif kind == "skip_ring":
             return self._apply_skip_ring(state, player_id, player_idx, action)
+        elif kind == "opponent_ring":
+            return self._apply_opponent_ring(state, player_id, player_idx, action)
+        elif kind == "skip_opponent_ring":
+            return self._apply_skip_opponent_ring(state, player_id, player_idx, action)
         elif kind == "pass":
             return self._apply_pass(state, player_id, player_idx)
         elif kind == "activate_pressure":
@@ -102,6 +107,10 @@ class TamskEngine(GameEngine):
             return []
         if state["phase"] == "config":
             return [state["player_ids"][0]]  # host only
+        # opponent_ring phase: the NON-current player must act
+        if state.get("sub_phase") == "opponent_ring":
+            opponent_idx = 1 - state["current_player"]
+            return [state["player_ids"][opponent_idx]]
         # In play phase, the current player must act.
         # Level 3: the non-current player CAN act (pressure) but isn't required to.
         return [state["player_ids"][state["current_player"]]]
@@ -120,6 +129,9 @@ class TamskEngine(GameEngine):
                 desc = f"{player_name}'s turn — move an hourglass"
             elif sub == "place_ring":
                 desc = f"{player_name}'s turn — place a ring or skip"
+            elif sub == "opponent_ring":
+                opp_name = state["players"][1 - cp]["name"]
+                desc = f"{opp_name} may place a ring (opponent skipped)"
             else:
                 desc = f"{player_name}'s turn"
         else:
@@ -201,6 +213,13 @@ class TamskEngine(GameEngine):
                     actions = [{"kind": "skip_ring"}]
             else:
                 actions = [{"kind": "skip_ring"}]
+
+        elif sub == "opponent_ring" and player_idx != cp:
+            # Opponent gets to place a ring where current player skipped
+            actions = [
+                {"kind": "opponent_ring"},
+                {"kind": "skip_opponent_ring"},
+            ]
 
         # Level 3: non-current player can activate pressure
         if (state["level"] == 3
@@ -373,16 +392,70 @@ class TamskEngine(GameEngine):
         player_name = state["players"][player_idx]["name"]
         log = [f"{player_name} skipped placing a ring."]
 
-        # Handle bonus rings even on skip
-        bonus = state["bonus_rings"][player_idx]
-        if bonus > 0:
-            space_key = state.get("moved_to_space")
-            if space_key:
-                placed = self._place_bonus_rings(state, player_idx, space_key, bonus)
-                if placed > 0:
-                    log.append(f"{player_name} placed {placed} bonus ring(s) from pressure penalty.")
-            state["bonus_rings"][player_idx] = 0
+        # Rule: opponent may place one of THEIR rings on the space where
+        # the current player declined.  Check if they can.
+        space_key = state.get("moved_to_space")
+        opponent_idx = 1 - player_idx
+        opponent = state["players"][opponent_idx]
+        can_opponent_place = False
+        if space_key:
+            space = state["board"][space_key]
+            can_opponent_place = (
+                len(space["rings"]) < space["capacity"]
+                and opponent["rings_remaining"] > 0
+            )
 
+        if can_opponent_place:
+            # Enter opponent_ring sub-phase: opponent decides before their turn
+            state["sub_phase"] = "opponent_ring"
+            state["opponent_ring_space"] = space_key
+            log.append(f"{opponent['name']} may place a ring on {space_key}.")
+            return ActionResult(state, log=log)
+
+        # No opportunity for opponent — advance normally
+        return self._advance_turn(state, log)
+
+    def _apply_opponent_ring(self, state, player_id, player_idx, action):
+        """Opponent places their ring on the space the current player skipped."""
+        if state["phase"] != "play" or state.get("sub_phase") != "opponent_ring":
+            raise ValueError("Not in opponent_ring phase")
+        # The opponent is the one acting — they are NOT the current_player
+        if player_idx == state["current_player"]:
+            raise ValueError("Only the opponent can act in opponent_ring phase")
+
+        space_key = state.get("opponent_ring_space")
+        if not space_key:
+            raise ValueError("No space recorded for opponent ring")
+
+        space = state["board"][space_key]
+        player = state["players"][player_idx]
+
+        if len(space["rings"]) >= space["capacity"]:
+            raise ValueError("Space is at max capacity")
+        if player["rings_remaining"] <= 0:
+            raise ValueError("No rings remaining")
+
+        space["rings"].append(player["color"])
+        player["rings_remaining"] -= 1
+
+        player_name = player["name"]
+        log = [f"{player_name} placed a ring at {space_key} (opponent skipped). "
+               f"({player['rings_remaining']} remaining)"]
+
+        state["opponent_ring_space"] = None
+        return self._advance_turn(state, log)
+
+    def _apply_skip_opponent_ring(self, state, player_id, player_idx, action):
+        """Opponent declines to place a ring on the skipped space."""
+        if state["phase"] != "play" or state.get("sub_phase") != "opponent_ring":
+            raise ValueError("Not in opponent_ring phase")
+        if player_idx == state["current_player"]:
+            raise ValueError("Only the opponent can act in opponent_ring phase")
+
+        player_name = state["players"][player_idx]["name"]
+        log = [f"{player_name} declined to place a ring on the skipped space."]
+
+        state["opponent_ring_space"] = None
         return self._advance_turn(state, log)
 
     def _apply_pass(self, state, player_id, player_idx):

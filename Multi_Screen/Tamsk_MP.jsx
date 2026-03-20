@@ -731,6 +731,9 @@ function GameBoard({ game }) {
   // Can place ring?
   const canPlaceRing = validActions.some(a => a.kind === "place_ring");
   const canSkipRing = validActions.some(a => a.kind === "skip_ring");
+  // Opponent ring opportunity (opponent skipped placing)
+  const canOpponentRing = validActions.some(a => a.kind === "opponent_ring");
+  const canSkipOpponentRing = validActions.some(a => a.kind === "skip_opponent_ring");
   // Can activate pressure?
   const canPressure = validActions.some(a => a.kind === "activate_pressure");
 
@@ -824,7 +827,11 @@ function GameBoard({ game }) {
               border: `1px solid ${isCurrent ? "#27ae60" : "#30363d"}`,
               color: isCurrent ? "#27ae60" : "#888",
             }}>
-              {isCurrent ? (subPhase === "place_ring" ? "Place a ring" : "Move an hourglass") : `${opp.name}'s turn`}
+              {subPhase === "opponent_ring" && !isCurrent
+                ? "Place a ring? (opponent skipped)"
+                : subPhase === "opponent_ring" && isCurrent
+                ? `${opp.name} may place a ring`
+                : isCurrent ? (subPhase === "place_ring" ? "Place a ring" : "Move an hourglass") : `${opp.name}'s turn`}
             </div>
           </div>
         </div>
@@ -878,6 +885,16 @@ function GameBoard({ game }) {
           {canSkipRing && (
             <button style={bs(false)} onClick={() => submitAction({ kind: "skip_ring" })}>
               Skip Ring
+            </button>
+          )}
+          {canOpponentRing && (
+            <button style={bs(true)} onClick={() => submitAction({ kind: "opponent_ring" })}>
+              Place Ring (Opponent Skipped!)
+            </button>
+          )}
+          {canSkipOpponentRing && (
+            <button style={bs(false)} onClick={() => submitAction({ kind: "skip_opponent_ring" })}>
+              Decline
             </button>
           )}
           {canPass && (
