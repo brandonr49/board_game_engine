@@ -39,9 +39,10 @@ class TamskEngine(GameEngine):
             "moved_to_space": None,
             "opponent_ring_space": None,
             "pressure_timer": {
-                "active": False,
-                "started_at": None,
-                "activated_by": None,
+                "timer_remaining": PRESSURE_TIMER_SECS,
+                "timer_started_at": None,  # null = sand not flowing
+                "active": False,           # flipped more recently than last move
+                "activated_by": None,      # player_id who last flipped it
             },
             "bonus_rings": [0, 0],
             "game_over": False,
@@ -560,14 +561,31 @@ class TamskEngine(GameEngine):
         if state["pressure_timer"]["active"]:
             raise ValueError("Pressure timer already active")
 
-        state["pressure_timer"] = {
-            "active": True,
-            "started_at": time.time(),
-            "activated_by": player_id,
-        }
+        pt = state["pressure_timer"]
+        now = time.time()
+
+        # Flip the hourglass — same logic as player hourglasses
+        if pt["timer_started_at"] is None:
+            # Sand was not flowing — flip uses whatever sand is on top
+            # (full 15s if never used, or whatever remained after last drain)
+            pt["timer_remaining"] = pt["timer_remaining"]  # stays as-is
+        else:
+            # Sand was flowing — compute current remaining, then invert
+            elapsed = now - pt["timer_started_at"]
+            current = max(0, pt["timer_remaining"] - elapsed)
+            pt["timer_remaining"] = PRESSURE_TIMER_SECS - current
+
+        # If it had fully drained, flipping gives full timer
+        if pt["timer_remaining"] <= 0:
+            pt["timer_remaining"] = PRESSURE_TIMER_SECS
+
+        pt["timer_started_at"] = now
+        pt["active"] = True
+        pt["activated_by"] = player_id
 
         player_name = state["players"][player_idx]["name"]
-        log = [f"{player_name} activated the 15-second pressure timer!"]
+        remaining = pt["timer_remaining"]
+        log = [f"{player_name} flipped the pressure timer! ({remaining:.0f}s)"]
         return ActionResult(state, log=log)
 
     # ── Turn advancement ─────────────────────────────────
@@ -584,12 +602,8 @@ class TamskEngine(GameEngine):
         # Reset pass state for the new current player
         state["players"][state["current_player"]]["passed"] = False
 
-        # Clear pressure timer
-        state["pressure_timer"] = {
-            "active": False,
-            "started_at": None,
-            "activated_by": None,
-        }
+        # Deactivate pressure timer (sand keeps flowing, but no penalty applies)
+        state["pressure_timer"]["active"] = False
 
         # Check if all rings placed
         if all(p["rings_remaining"] == 0 for p in state["players"]):
@@ -645,20 +659,45 @@ class TamskEngine(GameEngine):
                 h["timer_remaining"] = remaining
                 h["timer_started_at"] = now
 
+        # Also update pressure timer (Level 3)
+        if state["level"] == 3:
+            pt = state["pressure_timer"]
+            if pt["timer_started_at"] is not None:
+                elapsed = now - pt["timer_started_at"]
+                remaining = max(0, pt["timer_remaining"] - elapsed)
+                pt["timer_remaining"] = remaining
+                if remaining <= 0:
+                    pt["timer_started_at"] = None  # sand stopped
+                else:
+                    pt["timer_started_at"] = now
+
     def _resolve_pressure_timer(self, state, player_idx, log):
-        """Check if the pressure timer expired before the player moved."""
+        """Check if the pressure timer expired before the player moved.
+        Also deactivates the timer (a move was made)."""
         pt = state["pressure_timer"]
         if not pt["active"] or state["level"] != 3:
             return
 
         now = time.time()
-        elapsed = now - pt["started_at"]
-        if elapsed >= PRESSURE_TIMER_SECS:
-            # Penalty: opponent (who activated it) gets a bonus ring next turn
-            opponent_idx = 1 - player_idx
-            state["bonus_rings"][opponent_idx] += 1
-            opponent_name = state["players"][opponent_idx]["name"]
-            log.append(f"Pressure timer expired! {opponent_name} earns a bonus ring.")
+        if pt["timer_started_at"] is not None:
+            elapsed = now - pt["timer_started_at"]
+            remaining = max(0, pt["timer_remaining"] - elapsed)
+            pt["timer_remaining"] = remaining
+            # Sand keeps flowing (started_at stays set) — just snapshot it
+            pt["timer_started_at"] = now
+
+            if remaining <= 0:
+                # Timer fully drained — penalty
+                pt["timer_remaining"] = 0
+                pt["timer_started_at"] = None  # sand stopped
+                opponent_idx = 1 - player_idx
+                state["bonus_rings"][opponent_idx] += 1
+                opponent_name = state["players"][opponent_idx]["name"]
+                log.append(f"Pressure timer expired! {opponent_name} earns a bonus ring.")
+
+        # Move was made — timer is no longer "active" (no penalty applies)
+        # but sand keeps flowing if it hasn't drained
+        pt["active"] = False
 
     def _check_game_over_from_timers(self, state, log):
         """Check if all hourglasses of both players are dead."""

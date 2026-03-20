@@ -766,20 +766,21 @@ function GameBoard({ game }) {
   // Can activate pressure?
   const canPressure = validActions.some(a => a.kind === "activate_pressure");
 
-  // Pressure timer state — needs a live interval to tick down
+  // Pressure timer state — persistent hourglass, always shown in Level 3
   const pressureTimer = state.pressure_timer;
   const [pressureNow, setPressureNow] = useState(Date.now() / 1000);
 
   useEffect(() => {
-    if (!pressureTimer?.active) return;
+    if (level < 3 || !pressureTimer?.timer_started_at) return;
     const id = setInterval(() => setPressureNow(Date.now() / 1000), 200);
     return () => clearInterval(id);
-  }, [pressureTimer?.active]);
+  }, [level, pressureTimer?.timer_started_at]);
 
   const pressureRemaining = useMemo(() => {
-    if (!pressureTimer?.active || !pressureTimer?.started_at) return null;
-    const elapsed = pressureNow - pressureTimer.started_at;
-    return Math.max(0, 15 - elapsed);
+    if (!pressureTimer) return 15;
+    if (!pressureTimer.timer_started_at) return pressureTimer.timer_remaining;
+    const elapsed = pressureNow - pressureTimer.timer_started_at;
+    return Math.max(0, pressureTimer.timer_remaining - elapsed);
   }, [pressureTimer, pressureNow]);
 
   // Clear selection on phase changes
@@ -883,17 +884,32 @@ function GameBoard({ game }) {
           <PlayerPanel player={opp} isCurrent={state.current_player === oppIdx} isMe={false} hourglasses={state.hourglasses} level={level} getRemaining={getRemaining} />
         </div>
 
-        {/* Pressure timer display */}
-        {pressureTimer?.active && (
-          <div style={{
-            ...S.card, textAlign: "center", padding: 12,
-            border: "1px solid #e74c3c", background: "rgba(231,76,60,0.1)",
-          }}>
-            <span style={{ fontSize: 14, color: "#e74c3c", fontWeight: 700 }}>
-              PRESSURE TIMER: {pressureRemaining !== null ? formatTime(pressureRemaining) : "?"}
-            </span>
-          </div>
-        )}
+        {/* Pressure timer display — always visible in Level 3 */}
+        {level === 3 && pressureTimer && (() => {
+          const isActive = pressureTimer.active;
+          const isFlowing = !!pressureTimer.timer_started_at;
+          const borderColor = isActive ? "#e74c3c" : isFlowing ? "#ff9800" : "#30363d";
+          const bgColor = isActive ? "rgba(231,76,60,0.1)" : isFlowing ? "rgba(255,152,0,0.06)" : "rgba(0,0,0,0.2)";
+          const textColor = isActive ? "#e74c3c" : isFlowing ? "#ff9800" : "#888";
+          const label = isActive ? "PRESSURE (ACTIVE)" : isFlowing ? "PRESSURE (ticking)" : "PRESSURE TIMER";
+          return (
+            <div style={{
+              ...S.card, textAlign: "center", padding: 12,
+              border: `1px solid ${borderColor}`, background: bgColor,
+              display: "flex", justifyContent: "center", alignItems: "center", gap: 12,
+            }}>
+              <span style={{ fontSize: 14, color: textColor, fontWeight: 700 }}>
+                {label}: {formatTime(pressureRemaining)}
+              </span>
+              {canPressure && (
+                <button style={{ ...S.btn, ...S.btnDanger, padding: "4px 12px", fontSize: 12 }}
+                  onClick={() => submitAction({ kind: "activate_pressure" })}>
+                  Flip Timer
+                </button>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Auto-pass notification */}
         {autoPassNotice && (
@@ -959,12 +975,6 @@ function GameBoard({ game }) {
           {canSkipBonusRing && (
             <button style={bs(false)} onClick={() => submitAction({ kind: "skip_bonus_ring" })}>
               Skip Bonus Ring
-            </button>
-          )}
-          {canPressure && (
-            <button style={{ ...S.btn, ...S.btnDanger }}
-              onClick={() => submitAction({ kind: "activate_pressure" })}>
-              Activate Pressure Timer (15s)
             </button>
           )}
         </div>
