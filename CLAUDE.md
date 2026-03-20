@@ -283,17 +283,25 @@ function GameBoard({ game }) { /* Render game.gameState, handle actions */ }
 - **Inline CSS-in-JS styles** — each game defines its own `styles` object
 - **No external UI libraries** — just React + inline styles
 
-**⚠️ Critical: Guard against null `gameState` at the top of `GameBoard`.** There is a race condition between the `game_started` and `game_state` WebSocket messages. When `game_started` arrives, the App component switches from `<Lobby>` to `<GameBoard>`, but `gameState` may still be `null` because the `game_state` message hasn't arrived yet. Always add a null guard **before any state access**:
+**⚠️ Critical: Guard against null `gameState` in `GameBoard`.** There is a race condition between the `game_started` and `game_state` WebSocket messages. When `game_started` arrives, the App component switches from `<Lobby>` to `<GameBoard>`, but `gameState` may still be `null` because the `game_state` message hasn't arrived yet. You must add a null guard — but **all React hooks (`useState`, `useEffect`, `useMemo`, etc.) must come before any early return** (React rules of hooks). The correct pattern:
 ```jsx
 function GameBoard({ game }) {
-  const { gameState: state, ... } = game;
+  const { gameState: state, gameLogs, submitAction } = game;
+  const [selection, setSelection] = useState(null);
+  const logRef = useRef(null);
 
-  // Guard FIRST — state may be null on initial render
+  // ALL hooks BEFORE any early return
+  useEffect(() => { setSelection(null); }, [state?.current_player, state?.phase]);
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [gameLogs]);
+
+  // NOW the guard — safe to return early after all hooks are called
   if (!state || !state.players) {
     return <div>Loading game...</div>;
   }
 
-  // NOW safe to access state.players, state.board, etc.
+  // Safe to access state.players, state.board, etc.
   const myIdx = getMyPlayerIdx(state);
   // ...
 }

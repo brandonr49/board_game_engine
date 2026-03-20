@@ -607,7 +607,15 @@ function GameBoard({ game }) {
   const [selectedStack, setSelectedStack] = useState(null);
   const logRef = useRef(null);
 
-  // Guard FIRST — game_state message may not have arrived yet (race with game_started)
+  const phase = state?.phase;
+
+  // All hooks must be called before any early return (React rules of hooks)
+  useEffect(() => { setSelectedStack(null); }, [state?.current_player, phase]);
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [gameLogs]);
+
+  // Guard — game_state message may not have arrived yet (race with game_started)
   if (!state || !state.players) {
     return <div style={S.app}><div style={S.content}><div style={S.card}>Loading game...</div></div></div>;
   }
@@ -618,16 +626,9 @@ function GameBoard({ game }) {
   const opp = state.players[oppIdx];
   const myColor = me.color;
   const validActions = state.valid_actions || [];
-  const phase = state.phase;
   const isCurrent = state.current_player === myIdx;
 
   const canPass = validActions.some(a => a.kind === "pass");
-
-  // Clear selection on turn/phase changes
-  useEffect(() => { setSelectedStack(null); }, [state.current_player, phase]);
-  useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [gameLogs]);
 
   // Game over
   if (state.game_over) {
