@@ -257,22 +257,37 @@ function useTimers(hourglasses, level) {
   return { getRemaining };
 }
 
+// ─── HEX CAPACITY COLORS ──────────────────────────────────────────
+// 5 shades: 0 remaining = nearly invisible (matches bg), 4 = brightest
+const PAGE_BG = "#0d1117";
+const HEX_CAPACITY_FILLS = [
+  "rgba(13,17,23,0.85)",  // 0 remaining — fades into background
+  "#1e2328",              // 1 remaining
+  "#2a2518",              // 2 remaining
+  "#3d3420",              // 3 remaining
+  "#5a4a2a",              // 4 remaining
+];
+const HEX_CAPACITY_STROKES = [
+  "#1e2328",   // 0 — barely visible border
+  "#30363d",   // 1
+  "#4a3d22",   // 2
+  "#6b5a3a",   // 3
+  "#8b7a4a",   // 4
+];
+
 // ─── HEX CELL COMPONENT ───────────────────────────────────────────
 
-function HexCell({ q, r, space, hourglass, isValidDest, isSelected, onClick, level, getRemaining, myColor }) {
+function HexCell({ q, r, space, hourglass, isValidDest, isSelected, onClick, level, getRemaining, myColor, showRings }) {
   const { x, y } = hexToPixel(q, r);
   const cap = space?.capacity || ringCapacity(q, r);
   const rings = space?.rings || [];
-  const isCorner = CORNERS.some(([cq, cr]) => cq === q && cr === r);
+  const slotsLeft = cap - rings.length;
 
-  let fillColor = "#3a2f1e";
-  const dist = hexDistance(0, 0, q, r);
-  if (dist === 0) fillColor = "#5a4a2a";
-  else if (dist === 1) fillColor = "#4a3d22";
-  else if (dist === 2) fillColor = "#3a3018";
-
-  let strokeColor = "#6b5a3a";
+  // Color based on remaining capacity
+  let fillColor = HEX_CAPACITY_FILLS[Math.min(slotsLeft, 4)];
+  let strokeColor = HEX_CAPACITY_STROKES[Math.min(slotsLeft, 4)];
   let strokeWidth = 1.5;
+
   if (isValidDest) {
     strokeColor = "#4caf50";
     strokeWidth = 3;
@@ -299,20 +314,8 @@ function HexCell({ q, r, space, hourglass, isValidDest, isSelected, onClick, lev
         strokeWidth={strokeWidth}
       />
 
-      {/* Capacity label */}
-      <text
-        x={x + HEX_SIZE * 0.6}
-        y={y - HEX_SIZE * 0.55}
-        fill="#88774488"
-        fontSize={10}
-        textAnchor="middle"
-        fontFamily={font}
-      >
-        {cap}
-      </text>
-
-      {/* Ring indicators */}
-      {rings.map((color, i) => {
+      {/* Ring indicators — only when toggle is on */}
+      {showRings && rings.map((color, i) => {
         const ringY = y + HEX_SIZE * 0.42 - i * 5;
         return (
           <circle
@@ -328,7 +331,7 @@ function HexCell({ q, r, space, hourglass, isValidDest, isSelected, onClick, lev
         );
       })}
 
-      {/* Ring count */}
+      {/* Ring count — show when rings exist (regardless of toggle) */}
       {rings.length > 0 && (
         <text
           x={x + HEX_SIZE * 0.6}
@@ -411,7 +414,7 @@ function HexCell({ q, r, space, hourglass, isValidDest, isSelected, onClick, lev
 
 // ─── HEX BOARD ─────────────────────────────────────────────────────
 
-function HexBoard({ state, selectedHourglass, setSelectedHourglass, submitAction, myColor, level, getRemaining, bonusRingSpaces }) {
+function HexBoard({ state, selectedHourglass, setSelectedHourglass, submitAction, myColor, level, getRemaining, bonusRingSpaces, showRings }) {
   const board = state.board;
   const hourglasses = state.hourglasses || {};
   const validActions = state.valid_actions || [];
@@ -502,6 +505,7 @@ function HexBoard({ state, selectedHourglass, setSelectedHourglass, submitAction
             level={level}
             getRemaining={getRemaining}
             myColor={myColor}
+            showRings={showRings}
           />
         );
       })}
@@ -719,6 +723,7 @@ function ConfigPhase({ state, submitAction }) {
 function GameBoard({ game }) {
   const { gameState: state, phaseInfo, yourTurn, submitAction, gameLogs, gameOver } = game;
   const [selectedHourglass, setSelectedHourglass] = useState(null);
+  const [showRings, setShowRings] = useState(false);
   const logRef = useRef(null);
 
   const myIdx = useMemo(() => getMyPlayerIdx(state), [state]);
@@ -833,7 +838,9 @@ function GameBoard({ game }) {
               myColor={myColor}
               level={level}
               getRemaining={getRemaining}
+              showRings={showRings}
             />
+            <RingsToggle showRings={showRings} setShowRings={setShowRings} />
           </div>
 
           <GameLog logs={gameLogs} logRef={logRef} />
@@ -934,7 +941,9 @@ function GameBoard({ game }) {
             level={level}
             getRemaining={getRemaining}
             bonusRingSpaces={bonusRingSpaces}
+            showRings={showRings}
           />
+          <RingsToggle showRings={showRings} setShowRings={setShowRings} />
         </div>
 
         {/* Action buttons */}
@@ -989,6 +998,26 @@ function GameBoard({ game }) {
         {/* Game log */}
         <GameLog logs={gameLogs} logRef={logRef} />
       </div>
+    </div>
+  );
+}
+
+// ─── RINGS TOGGLE ─────────────────────────────────────────────────
+
+function RingsToggle({ showRings, setShowRings }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+      <button
+        style={{
+          ...S.btn, padding: "3px 10px", fontSize: 11,
+          opacity: showRings ? 1 : 0.6,
+          background: showRings ? "rgba(201,168,76,0.15)" : "transparent",
+          border: `1px solid ${showRings ? "#c9a84c44" : "#30363d"}`,
+        }}
+        onClick={() => setShowRings(v => !v)}
+      >
+        {showRings ? "Hide Rings" : "Show Rings"}
+      </button>
     </div>
   );
 }
