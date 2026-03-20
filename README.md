@@ -17,6 +17,7 @@ For implementation details, see the [Integration Guide](CLAUDE.md).
 | DVONN | 2 | — | ✓ |
 | YINSH | 2 | — | ✓ |
 | ZERTZ | 2 | — | ✓ |
+| TZAAR | 2 | — | ✓ |
 
 ## How It Works
 
