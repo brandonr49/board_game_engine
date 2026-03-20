@@ -607,6 +607,11 @@ function GameBoard({ game }) {
   const [selectedStack, setSelectedStack] = useState(null);
   const logRef = useRef(null);
 
+  // Guard FIRST — game_state message may not have arrived yet (race with game_started)
+  if (!state || !state.players) {
+    return <div style={S.app}><div style={S.content}><div style={S.card}>Loading game...</div></div></div>;
+  }
+
   const myIdx = getMyPlayerIdx(state);
   const oppIdx = 1 - myIdx;
   const me = state.players[myIdx];
@@ -623,10 +628,6 @@ function GameBoard({ game }) {
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [gameLogs]);
-
-  if (!state.players || !me) {
-    return <div style={S.app}><div style={S.content}><div style={S.card}>Loading game...</div></div></div>;
-  }
 
   // Game over
   if (state.game_over) {
