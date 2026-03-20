@@ -726,8 +726,23 @@ function GameBoard({ game }) {
   const subPhase = state.sub_phase;
   const isCurrent = state.current_player === myIdx;
 
-  // Can pass?
-  const canPass = validActions.some(a => a.kind === "pass");
+  // Auto-pass notification
+  const [autoPassNotice, setAutoPassNotice] = useState(null);
+
+  useEffect(() => {
+    if (state.auto_passed) {
+      const passedPlayer = state.players.find(p => p.player_id === state.auto_passed);
+      const isMe = state.auto_passed === state.your_player_id;
+      setAutoPassNotice(
+        isMe
+          ? "You were auto-passed (no valid moves)"
+          : `${passedPlayer?.name || "Opponent"} was auto-passed (no valid moves)`
+      );
+      const timer = setTimeout(() => setAutoPassNotice(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [state.auto_passed, state.turn_number]);
+
   // Can place ring?
   const canPlaceRing = validActions.some(a => a.kind === "place_ring");
   const canSkipRing = validActions.some(a => a.kind === "skip_ring");
@@ -737,13 +752,21 @@ function GameBoard({ game }) {
   // Can activate pressure?
   const canPressure = validActions.some(a => a.kind === "activate_pressure");
 
-  // Pressure timer state
+  // Pressure timer state — needs a live interval to tick down
   const pressureTimer = state.pressure_timer;
+  const [pressureNow, setPressureNow] = useState(Date.now() / 1000);
+
+  useEffect(() => {
+    if (!pressureTimer?.active) return;
+    const id = setInterval(() => setPressureNow(Date.now() / 1000), 200);
+    return () => clearInterval(id);
+  }, [pressureTimer?.active]);
+
   const pressureRemaining = useMemo(() => {
     if (!pressureTimer?.active || !pressureTimer?.started_at) return null;
-    const elapsed = Date.now() / 1000 - pressureTimer.started_at;
+    const elapsed = pressureNow - pressureTimer.started_at;
     return Math.max(0, 15 - elapsed);
-  }, [pressureTimer, state]);
+  }, [pressureTimer, pressureNow]);
 
   // Clear selection on phase changes
   useEffect(() => { setSelectedHourglass(null); }, [subPhase, state.current_player]);
@@ -854,6 +877,18 @@ function GameBoard({ game }) {
           </div>
         )}
 
+        {/* Auto-pass notification */}
+        {autoPassNotice && (
+          <div style={{
+            ...S.card, textAlign: "center", padding: 12,
+            border: "1px solid #ff9800", background: "rgba(255,152,0,0.1)",
+          }}>
+            <span style={{ fontSize: 14, color: "#ff9800", fontWeight: 700 }}>
+              {autoPassNotice}
+            </span>
+          </div>
+        )}
+
         {/* Board */}
         <div style={S.card}>
           <HexBoard
@@ -895,12 +930,6 @@ function GameBoard({ game }) {
           {canSkipOpponentRing && (
             <button style={bs(false)} onClick={() => submitAction({ kind: "skip_opponent_ring" })}>
               Decline
-            </button>
-          )}
-          {canPass && (
-            <button style={{ ...S.btn, color: "#e74c3c", borderColor: "#e74c3c" }}
-              onClick={() => submitAction({ kind: "pass" })}>
-              Pass (No moves)
             </button>
           )}
           {canPressure && (

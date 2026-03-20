@@ -192,8 +192,7 @@ class TamskEngine(GameEngine):
 
         if sub == "move" and player_idx == cp:
             actions = self._valid_move_actions(state, player_idx)
-            if not actions:
-                actions = [{"kind": "pass"}]
+            # No pass action needed — auto-pass happens in _advance_turn
 
         elif sub == "place_ring" and player_idx == cp:
             space_key = state.get("moved_to_space")
@@ -529,6 +528,29 @@ class TamskEngine(GameEngine):
         game_over = self._check_game_over_from_timers(state, log)
         if game_over:
             return game_over
+
+        # Auto-pass if the new current player has no valid moves.
+        # This prevents stalling to bleed opponent timer.
+        cp = state["current_player"]
+        valid_moves = self._valid_move_actions(state, cp)
+        if not valid_moves:
+            player_name = state["players"][cp]["name"]
+            log.append(f"{player_name} has no valid moves — auto-passed.")
+            state["players"][cp]["passed"] = True
+            state["consecutive_passes"] += 1
+
+            # Flag so the client can show a notification
+            state["auto_passed"] = state["player_ids"][cp]
+
+            if state["consecutive_passes"] >= 2:
+                return self._end_game(state, log)
+
+            # Advance to the other player (recursive, but bounded —
+            # if both can't move we hit consecutive_passes >= 2 above)
+            return self._advance_turn(state, log)
+
+        state["consecutive_passes"] = 0
+        state.pop("auto_passed", None)
 
         return ActionResult(state, log=log)
 
