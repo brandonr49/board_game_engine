@@ -382,6 +382,7 @@ async def run_server(host="0.0.0.0", port=8765):
     from server.tzaar.engine import TzaarEngine
     from server.gipf.engine import GipfEngine
     from server.punct.engine import PunctEngine
+    from server.lyngk.engine import LyngkEngine
 
     server = GameServer()
     server.register_engine("dragon", DragonEngine)
@@ -396,6 +397,7 @@ async def run_server(host="0.0.0.0", port=8765):
     server.register_engine("tzaar", TzaarEngine)
     server.register_engine("gipf", GipfEngine)
     server.register_engine("punct", PunctEngine)
+    server.register_engine("lyngk", LyngkEngine)
 
     print(f"Game server starting on ws://{host}:{port}")
     print(f"Registered games: {list(server.engines.keys())}")

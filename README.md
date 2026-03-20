@@ -20,6 +20,7 @@ For implementation details, see the [Integration Guide](CLAUDE.md).
 | TZAAR | 2 | — | ✓ |
 | GIPF | 2 | — | ✓ |
 | PUNCT | 2 | — | ✓ |
+| LYNGK | 2 | — | ✓ |
 
 ## How It Works
 
