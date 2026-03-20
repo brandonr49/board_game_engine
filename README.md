@@ -14,6 +14,7 @@ For implementation details, see the [Integration Guide](CLAUDE.md).
 | In the Year of the Dragon | 2–5 | ✓ | ✓ |
 | Caylus | 2–5 | — | ✓ |
 | TAMSK | 2 | — | ✓ |
+| DVONN | 2 | — | ✓ |
 
 ## How It Works
 
