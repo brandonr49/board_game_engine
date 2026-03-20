@@ -381,6 +381,7 @@ async def run_server(host="0.0.0.0", port=8765):
     from server.zertz.engine import ZertzEngine
     from server.tzaar.engine import TzaarEngine
     from server.gipf.engine import GipfEngine
+    from server.punct.engine import PunctEngine
 
     server = GameServer()
     server.register_engine("dragon", DragonEngine)
@@ -394,6 +395,7 @@ async def run_server(host="0.0.0.0", port=8765):
     server.register_engine("zertz", ZertzEngine)
     server.register_engine("tzaar", TzaarEngine)
     server.register_engine("gipf", GipfEngine)
+    server.register_engine("punct", PunctEngine)
 
     print(f"Game server starting on ws://{host}:{port}")
     print(f"Registered games: {list(server.engines.keys())}")

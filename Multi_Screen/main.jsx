@@ -11,6 +11,7 @@ import { createRoot } from "react-dom/client";
 // import App from "./Yinsh_MP.jsx";
 // import App from "./Zertz_MP.jsx";
 // import App from "./Tzaar_MP.jsx";
-import App from "./Gipf_MP.jsx";
+// import App from "./Gipf_MP.jsx";
+import App from "./Punct_MP.jsx";
 
 createRoot(document.getElementById("root")).render(<App />);

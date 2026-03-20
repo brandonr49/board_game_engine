@@ -19,6 +19,7 @@ For implementation details, see the [Integration Guide](CLAUDE.md).
 | ZERTZ | 2 | — | ✓ |
 | TZAAR | 2 | — | ✓ |
 | GIPF | 2 | — | ✓ |
+| PUNCT | 2 | — | ✓ |
 
 ## How It Works
 
