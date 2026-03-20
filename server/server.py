@@ -377,6 +377,7 @@ async def run_server(host="0.0.0.0", port=8765):
     from server.caylus.engine import CaylusEngine
     from server.tamsk.engine import TamskEngine
     from server.dvonn.engine import DvonnEngine
+    from server.yinsh.engine import YinshEngine
 
     server = GameServer()
     server.register_engine("dragon", DragonEngine)
@@ -386,6 +387,7 @@ async def run_server(host="0.0.0.0", port=8765):
     server.register_engine("caylus", CaylusEngine)
     server.register_engine("tamsk", TamskEngine)
     server.register_engine("dvonn", DvonnEngine)
+    server.register_engine("yinsh", YinshEngine)
 
     print(f"Game server starting on ws://{host}:{port}")
     print(f"Registered games: {list(server.engines.keys())}")

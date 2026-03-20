@@ -15,6 +15,7 @@ For implementation details, see the [Integration Guide](CLAUDE.md).
 | Caylus | 2–5 | — | ✓ |
 | TAMSK | 2 | — | ✓ |
 | DVONN | 2 | — | ✓ |
+| YINSH | 2 | — | ✓ |
 
 ## How It Works
 
