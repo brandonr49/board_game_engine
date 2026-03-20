@@ -74,7 +74,7 @@ Hourglasses are moved as normal pieces without flipping timers. Pure strategy, n
 All Level 2 rules apply, plus:
 
 - Either player may activate the 15-second pressure timer during their opponent's turn to force faster play.
-- If the opponent fails to complete their move within 15 seconds after the pressure timer is activated, they suffer a penalty: the activating player may place 2 rings on their next turn instead of 1.
+- If the opponent fails to complete their move within 15 seconds after the pressure timer is activated, they suffer a penalty: the activating player may place 2 rings on their next turn instead of 1. The first ring follows normal rules (on the space they moved to). The second ring may be placed on ANY board space, regardless of ring capacity.
 - If the opponent hasn't even started their move when the timer expires, they forfeit that turn entirely (same penalty applies).
 
 ## Winning

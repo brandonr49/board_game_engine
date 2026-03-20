@@ -411,10 +411,11 @@ function HexCell({ q, r, space, hourglass, isValidDest, isSelected, onClick, lev
 
 // ─── HEX BOARD ─────────────────────────────────────────────────────
 
-function HexBoard({ state, selectedHourglass, setSelectedHourglass, submitAction, myColor, level, getRemaining }) {
+function HexBoard({ state, selectedHourglass, setSelectedHourglass, submitAction, myColor, level, getRemaining, bonusRingSpaces }) {
   const board = state.board;
   const hourglasses = state.hourglasses || {};
   const validActions = state.valid_actions || [];
+  const isBonusPhase = bonusRingSpaces && bonusRingSpaces.size > 0;
 
   // Build position → hourglass lookup
   const posToHourglass = useMemo(() => {
@@ -456,6 +457,12 @@ function HexBoard({ state, selectedHourglass, setSelectedHourglass, submitAction
     const key = hexKey(q, r);
     const hg = posToHourglass[key];
 
+    // Bonus ring placement — click any highlighted space
+    if (isBonusPhase && bonusRingSpaces.has(key)) {
+      submitAction({ kind: "place_bonus_ring", space: key });
+      return;
+    }
+
     // If clicking a valid destination, move there
     if (selectedHourglass && validDests.has(key)) {
       submitAction({ kind: "move_hourglass", hourglass_id: selectedHourglass, to: key });
@@ -481,6 +488,7 @@ function HexBoard({ state, selectedHourglass, setSelectedHourglass, submitAction
       {ALL_POSITIONS.map(([q, r]) => {
         const key = hexKey(q, r);
         const hg = posToHourglass[key];
+        const isBonusDest = isBonusPhase && bonusRingSpaces.has(key);
         return (
           <HexCell
             key={key}
@@ -488,7 +496,7 @@ function HexBoard({ state, selectedHourglass, setSelectedHourglass, submitAction
             r={r}
             space={board[key]}
             hourglass={hg}
-            isValidDest={validDests.has(key)}
+            isValidDest={validDests.has(key) || isBonusDest}
             isSelected={hg && selectedHourglass === hg.id}
             onClick={() => handleCellClick(q, r)}
             level={level}
@@ -749,6 +757,12 @@ function GameBoard({ game }) {
   // Opponent ring opportunity (opponent skipped placing)
   const canOpponentRing = validActions.some(a => a.kind === "opponent_ring");
   const canSkipOpponentRing = validActions.some(a => a.kind === "skip_opponent_ring");
+  // Bonus ring (pressure penalty)
+  const canBonusRing = validActions.some(a => a.kind === "place_bonus_ring");
+  const canSkipBonusRing = validActions.some(a => a.kind === "skip_bonus_ring");
+  const bonusRingSpaces = useMemo(() => {
+    return new Set(validActions.filter(a => a.kind === "place_bonus_ring").map(a => a.space));
+  }, [validActions]);
   // Can activate pressure?
   const canPressure = validActions.some(a => a.kind === "activate_pressure");
 
@@ -850,7 +864,11 @@ function GameBoard({ game }) {
               border: `1px solid ${isCurrent ? "#27ae60" : "#30363d"}`,
               color: isCurrent ? "#27ae60" : "#888",
             }}>
-              {subPhase === "opponent_ring" && !isCurrent
+              {subPhase === "bonus_ring" && isCurrent
+                ? "Place bonus ring (pressure penalty)"
+                : subPhase === "bonus_ring" && !isCurrent
+                ? `${opp.name} placing bonus ring`
+                : subPhase === "opponent_ring" && !isCurrent
                 ? "Place a ring? (opponent skipped)"
                 : subPhase === "opponent_ring" && isCurrent
                 ? `${opp.name} may place a ring`
@@ -899,6 +917,7 @@ function GameBoard({ game }) {
             myColor={myColor}
             level={level}
             getRemaining={getRemaining}
+            bonusRingSpaces={bonusRingSpaces}
           />
         </div>
 
@@ -930,6 +949,16 @@ function GameBoard({ game }) {
           {canSkipOpponentRing && (
             <button style={bs(false)} onClick={() => submitAction({ kind: "skip_opponent_ring" })}>
               Decline
+            </button>
+          )}
+          {canBonusRing && (
+            <div style={{ fontSize: 13, color: "#ff9800", padding: "4px 0" }}>
+              Pressure penalty — click any space to place a bonus ring
+            </div>
+          )}
+          {canSkipBonusRing && (
+            <button style={bs(false)} onClick={() => submitAction({ kind: "skip_bonus_ring" })}>
+              Skip Bonus Ring
             </button>
           )}
           {canPressure && (

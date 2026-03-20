@@ -97,6 +97,10 @@ class TamskEngine(GameEngine):
             return self._apply_skip_opponent_ring(state, player_id, player_idx, action)
         elif kind == "pass":
             return self._apply_pass(state, player_id, player_idx)
+        elif kind == "place_bonus_ring":
+            return self._apply_place_bonus_ring(state, player_id, player_idx, action)
+        elif kind == "skip_bonus_ring":
+            return self._apply_skip_bonus_ring(state, player_id, player_idx)
         elif kind == "activate_pressure":
             return self._apply_activate_pressure(state, player_id, player_idx)
         else:
@@ -129,6 +133,8 @@ class TamskEngine(GameEngine):
                 desc = f"{player_name}'s turn — move an hourglass"
             elif sub == "place_ring":
                 desc = f"{player_name}'s turn — place a ring or skip"
+            elif sub == "bonus_ring":
+                desc = f"{player_name}'s turn — place a bonus ring (pressure penalty)"
             elif sub == "opponent_ring":
                 opp_name = state["players"][1 - cp]["name"]
                 desc = f"{opp_name} may place a ring (opponent skipped)"
@@ -212,6 +218,17 @@ class TamskEngine(GameEngine):
                     actions = [{"kind": "skip_ring"}]
             else:
                 actions = [{"kind": "skip_ring"}]
+
+        elif sub == "bonus_ring" and player_idx == cp:
+            # Pressure penalty: player chooses any board space for bonus ring
+            player = state["players"][player_idx]
+            if player["rings_remaining"] > 0:
+                for space_key in state["board"]:
+                    actions.append({
+                        "kind": "place_bonus_ring",
+                        "space": space_key,
+                    })
+            actions.append({"kind": "skip_bonus_ring"})
 
         elif sub == "opponent_ring" and player_idx != cp:
             # Opponent gets to place a ring where current player skipped
@@ -372,15 +389,8 @@ class TamskEngine(GameEngine):
         player_name = player["name"]
         log = [f"{player_name} placed a ring at {space_key}. ({player['rings_remaining']} remaining)"]
 
-        # Handle bonus rings (Level 3 pressure penalty)
-        bonus = state["bonus_rings"][player_idx]
-        if bonus > 0:
-            placed = self._place_bonus_rings(state, player_idx, space_key, bonus)
-            if placed > 0:
-                log.append(f"{player_name} placed {placed} bonus ring(s) from pressure penalty.")
-            state["bonus_rings"][player_idx] = 0
-
-        return self._advance_turn(state, log)
+        # Check if player has bonus rings to place (Level 3 pressure penalty)
+        return self._maybe_enter_bonus_ring_phase(state, player_idx, log)
 
     def _apply_skip_ring(self, state, player_id, player_idx, action):
         if state["phase"] != "play" or state.get("sub_phase") != "place_ring":
@@ -411,8 +421,8 @@ class TamskEngine(GameEngine):
             log.append(f"{opponent['name']} may place a ring on {space_key}.")
             return ActionResult(state, log=log)
 
-        # No opportunity for opponent — advance normally
-        return self._advance_turn(state, log)
+        # No opportunity for opponent — check for bonus rings then advance
+        return self._maybe_enter_bonus_ring_phase(state, player_idx, log)
 
     def _apply_opponent_ring(self, state, player_id, player_idx, action):
         """Opponent places their ring on the space the current player skipped."""
@@ -442,7 +452,9 @@ class TamskEngine(GameEngine):
                f"({player['rings_remaining']} remaining)"]
 
         state["opponent_ring_space"] = None
-        return self._advance_turn(state, log)
+        # Bonus rings belong to the current player (whose turn it still is)
+        cp = state["current_player"]
+        return self._maybe_enter_bonus_ring_phase(state, cp, log)
 
     def _apply_skip_opponent_ring(self, state, player_id, player_idx, action):
         """Opponent declines to place a ring on the skipped space."""
@@ -455,7 +467,9 @@ class TamskEngine(GameEngine):
         log = [f"{player_name} declined to place a ring on the skipped space."]
 
         state["opponent_ring_space"] = None
-        return self._advance_turn(state, log)
+        # Bonus rings belong to the current player (whose turn it still is)
+        cp = state["current_player"]
+        return self._maybe_enter_bonus_ring_phase(state, cp, log)
 
     def _apply_pass(self, state, player_id, player_idx):
         if state["phase"] != "play" or state.get("sub_phase") != "move":
@@ -477,6 +491,63 @@ class TamskEngine(GameEngine):
         if state["consecutive_passes"] >= 2:
             return self._end_game(state, log)
 
+        return self._advance_turn(state, log)
+
+    def _maybe_enter_bonus_ring_phase(self, state, player_idx, log):
+        """If the player has bonus rings from pressure penalty, enter bonus_ring
+        sub-phase so they can choose where to place. Otherwise advance turn."""
+        bonus = state["bonus_rings"][player_idx]
+        if bonus > 0 and state["players"][player_idx]["rings_remaining"] > 0:
+            state["sub_phase"] = "bonus_ring"
+            player_name = state["players"][player_idx]["name"]
+            log.append(f"{player_name} has {bonus} bonus ring(s) to place (pressure penalty).")
+            return ActionResult(state, log=log)
+        # No bonus rings — clear any leftover and advance
+        state["bonus_rings"][player_idx] = 0
+        return self._advance_turn(state, log)
+
+    def _apply_place_bonus_ring(self, state, player_id, player_idx, action):
+        """Place a bonus ring on any board space (ignores capacity)."""
+        if state["phase"] != "play" or state.get("sub_phase") != "bonus_ring":
+            raise ValueError("Not in bonus_ring phase")
+        if player_idx != state["current_player"]:
+            raise ValueError("Not your turn")
+
+        space_key = action.get("space")
+        if not space_key or space_key not in state["board"]:
+            raise ValueError("Invalid board space")
+
+        player = state["players"][player_idx]
+        if player["rings_remaining"] <= 0:
+            raise ValueError("No rings remaining")
+
+        # Bonus rings ignore capacity — can be placed on any space
+        space = state["board"][space_key]
+        space["rings"].append(player["color"])
+        player["rings_remaining"] -= 1
+        state["bonus_rings"][player_idx] -= 1
+
+        player_name = player["name"]
+        log = [f"{player_name} placed a bonus ring at {space_key}. ({player['rings_remaining']} remaining)"]
+
+        # If more bonus rings remain, stay in bonus_ring phase
+        if state["bonus_rings"][player_idx] > 0 and player["rings_remaining"] > 0:
+            return ActionResult(state, log=log)
+
+        # Done with bonus rings
+        state["bonus_rings"][player_idx] = 0
+        return self._advance_turn(state, log)
+
+    def _apply_skip_bonus_ring(self, state, player_id, player_idx):
+        """Decline to place remaining bonus ring(s)."""
+        if state["phase"] != "play" or state.get("sub_phase") != "bonus_ring":
+            raise ValueError("Not in bonus_ring phase")
+        if player_idx != state["current_player"]:
+            raise ValueError("Not your turn")
+
+        player_name = state["players"][player_idx]["name"]
+        log = [f"{player_name} declined to place bonus ring(s)."]
+        state["bonus_rings"][player_idx] = 0
         return self._advance_turn(state, log)
 
     def _apply_activate_pressure(self, state, player_id, player_idx):
@@ -588,21 +659,6 @@ class TamskEngine(GameEngine):
             state["bonus_rings"][opponent_idx] += 1
             opponent_name = state["players"][opponent_idx]["name"]
             log.append(f"Pressure timer expired! {opponent_name} earns a bonus ring.")
-
-    def _place_bonus_rings(self, state, player_idx, space_key, count):
-        """Place bonus rings on the space if possible. Returns number placed."""
-        space = state["board"][space_key]
-        player = state["players"][player_idx]
-        placed = 0
-        for _ in range(count):
-            if len(space["rings"]) >= space["capacity"]:
-                break
-            if player["rings_remaining"] <= 0:
-                break
-            space["rings"].append(player["color"])
-            player["rings_remaining"] -= 1
-            placed += 1
-        return placed
 
     def _check_game_over_from_timers(self, state, log):
         """Check if all hourglasses of both players are dead."""
