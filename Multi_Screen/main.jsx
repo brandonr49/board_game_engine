@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 // import App from "./Caylus_MP.jsx";
 // import App from "./Tamsk_MP.jsx";
 // import App from "./Dvonn_MP.jsx";
-import App from "./Yinsh_MP.jsx";
+// import App from "./Yinsh_MP.jsx";
+import App from "./Zertz_MP.jsx";
 
 createRoot(document.getElementById("root")).render(<App />);

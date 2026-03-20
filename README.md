@@ -16,6 +16,7 @@ For implementation details, see the [Integration Guide](CLAUDE.md).
 | TAMSK | 2 | — | ✓ |
 | DVONN | 2 | — | ✓ |
 | YINSH | 2 | — | ✓ |
+| ZERTZ | 2 | — | ✓ |
 
 ## How It Works
 
