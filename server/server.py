@@ -640,3 +640,8 @@ async def run_server(host="0.0.0.0", port=8765):
 
     async with websockets.serve(server.handle_connection, host, port):
         await asyncio.Future()  # run forever
+
+
+def main():
+    """Entry point for run_server.py."""
+    asyncio.run(run_server())
