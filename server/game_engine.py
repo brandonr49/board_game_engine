@@ -82,3 +82,16 @@ class GameEngine(ABC):
         e.g. {"phase": "action", "round": 3, "description": "Choose an action"}
         """
         ...
+
+    def get_spectator_view(self, state: dict) -> dict:
+        """
+        Return a view of the state suitable for spectators (non-players).
+        Default: full state with no valid_actions and no player identity.
+        Games with hidden information (hands, decks) should override this
+        to decide what spectators can see.
+        """
+        from copy import deepcopy
+        view = deepcopy(state)
+        view["your_player_id"] = None
+        view["valid_actions"] = []
+        return view

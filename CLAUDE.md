@@ -64,6 +64,12 @@ class MyGameEngine(GameEngine):
 
     def get_phase_info(self, state) -> dict:
         """Return {phase, round, description, ...} for the UI."""
+
+    # Optional override (has default implementation):
+    def get_spectator_view(self, state) -> dict:
+        """Return a view for spectators (non-players).
+        Default: full state with valid_actions=[] and your_player_id=None.
+        Override for games with hidden info to control what spectators see."""
 ```
 
 ### Key Patterns

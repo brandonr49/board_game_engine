@@ -73,6 +73,29 @@ Response: `game_state`
 ```
 Broadcasts: `chat` to all players
 
+### `list_rooms` — Browse active rooms (pre-auth, no token needed)
+```json
+{"type": "list_rooms", "game": "dvonn"}
+```
+`game` is optional — omit to list all rooms. Response: `room_list`
+
+### `spectate` — Join a room as a spectator
+```json
+{"type": "spectate", "room_code": "F6PYC", "name": "Charlie"}
+```
+Response: `spectating` + (if game started) `game_state` (spectator view)
+
+### `kick` — Host kicks a player from lobby (before game starts)
+```json
+{"type": "kick", "player_id": "p_def456"}
+```
+
+### `lock_room` / `unlock_room` — Host locks/unlocks the room
+```json
+{"type": "lock_room"}
+{"type": "unlock_room"}
+```
+
 ---
 
 ## Messages: Server → Client
@@ -166,6 +189,39 @@ Broadcasts: `chat` to all players
 ```json
 {"type": "game_over"}
 ```
+
+### `room_list` — Response to `list_rooms`
+```json
+{
+  "type": "room_list",
+  "rooms": [
+    {
+      "room_code": "F6PYC",
+      "game": "dvonn",
+      "host_name": "Alice",
+      "player_count": 1,
+      "max_players": 2,
+      "started": false,
+      "joinable": true,
+      "spectatable": true,
+      "locked": false,
+      "players": [{"name": "Alice", "connected": true}],
+      "spectator_count": 0
+    }
+  ]
+}
+```
+
+### `spectating` — Response to `spectate`
+```json
+{
+  "type": "spectating",
+  "room_code": "F6PYC",
+  "token": "..."
+}
+```
+Spectators receive `game_state`, `game_log`, `game_over`, and `lobby_update` broadcasts.
+Spectators cannot submit `action`, `start`, `chat`, or host commands.
 
 ---
 
