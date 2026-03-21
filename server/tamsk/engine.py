@@ -37,7 +37,9 @@ class TamskEngine(GameEngine):
             "hourglasses_moved_initial": [[], []],
             "consecutive_passes": 0,
             "moved_to_space": None,
-            "opponent_ring_space": None,
+            "ring_window_start": None,
+            "ring_window_space": None,
+            "ring_window_mover": None,
             "pressure_timer": {
                 "timer_remaining": PRESSURE_TIMER_SECS,
                 "timer_started_at": None,  # null = sand not flowing
@@ -74,15 +76,28 @@ class TamskEngine(GameEngine):
 
     def apply_action(self, state, player_id, action):
         state = deepcopy(state)
-        self._check_timers(state)
+        game_ended = self._check_timers(state)
 
         kind = action.get("kind")
         player_idx = self._player_index(state, player_id)
         if player_idx is None:
             raise ValueError("Unknown player")
 
+        if game_ended:
+            return ActionResult(state, log=["Game ended — timers expired."], game_over=True)
+
         if state["game_over"]:
             raise ValueError("Game is over")
+
+        # Auto-expire ring window if > 6 seconds
+        if state.get("sub_phase") == "ring_window" and state.get("ring_window_start"):
+            elapsed = time.time() - state["ring_window_start"]
+            if elapsed >= 6.0 and kind != "place_ring":
+                state["ring_window_start"] = None
+                state["ring_window_space"] = None
+                state["ring_window_mover"] = None
+                cp = state["current_player"]
+                return self._maybe_enter_bonus_ring_phase(state, cp, ["Ring window expired."])
 
         if kind == "set_level":
             return self._apply_set_level(state, player_idx, action)
@@ -90,12 +105,6 @@ class TamskEngine(GameEngine):
             return self._apply_move_hourglass(state, player_id, player_idx, action)
         elif kind == "place_ring":
             return self._apply_place_ring(state, player_id, player_idx, action)
-        elif kind == "skip_ring":
-            return self._apply_skip_ring(state, player_id, player_idx, action)
-        elif kind == "opponent_ring":
-            return self._apply_opponent_ring(state, player_id, player_idx, action)
-        elif kind == "skip_opponent_ring":
-            return self._apply_skip_opponent_ring(state, player_id, player_idx, action)
         elif kind == "pass":
             return self._apply_pass(state, player_id, player_idx)
         elif kind == "place_bonus_ring":
@@ -112,10 +121,9 @@ class TamskEngine(GameEngine):
             return []
         if state["phase"] == "config":
             return [state["player_ids"][0]]  # host only
-        # opponent_ring phase: the NON-current player must act
-        if state.get("sub_phase") == "opponent_ring":
-            opponent_idx = 1 - state["current_player"]
-            return [state["player_ids"][opponent_idx]]
+        # ring_window: both players can act (mover first 3s, then either)
+        if state.get("sub_phase") == "ring_window":
+            return list(state["player_ids"])
         # In play phase, the current player must act.
         # Level 3: the non-current player CAN act (pressure) but isn't required to.
         return [state["player_ids"][state["current_player"]]]
@@ -132,13 +140,10 @@ class TamskEngine(GameEngine):
             sub = state.get("sub_phase", "move")
             if sub == "move":
                 desc = f"{player_name}'s turn — move an hourglass"
-            elif sub == "place_ring":
-                desc = f"{player_name}'s turn — place a ring or skip"
+            elif sub == "ring_window":
+                desc = f"Ring placement window"
             elif sub == "bonus_ring":
                 desc = f"{player_name}'s turn — place a bonus ring (pressure penalty)"
-            elif sub == "opponent_ring":
-                opp_name = state["players"][1 - cp]["name"]
-                desc = f"{opp_name} may place a ring (opponent skipped)"
             else:
                 desc = f"{player_name}'s turn"
         else:
@@ -201,24 +206,19 @@ class TamskEngine(GameEngine):
             actions = self._valid_move_actions(state, player_idx)
             # No pass action needed — auto-pass happens in _advance_turn
 
-        elif sub == "place_ring" and player_idx == cp:
-            space_key = state.get("moved_to_space")
+        elif sub == "ring_window":
+            now = time.time()
+            elapsed = now - (state.get("ring_window_start") or now)
+            space_key = state.get("ring_window_space")
             if space_key:
                 space = state["board"][space_key]
-                player = state["players"][player_idx]
-                can_place = (
-                    len(space["rings"]) < space["capacity"]
-                    and player["rings_remaining"] > 0
-                )
-                if can_place:
-                    actions = [
-                        {"kind": "place_ring"},
-                        {"kind": "skip_ring"},
-                    ]
-                else:
-                    actions = [{"kind": "skip_ring"}]
-            else:
-                actions = [{"kind": "skip_ring"}]
+                can_place = len(space["rings"]) < space["capacity"]
+                mover_idx = state.get("ring_window_mover")
+                if can_place and state["players"][player_idx]["rings_remaining"] > 0:
+                    if player_idx == mover_idx and elapsed < 3.0:
+                        actions.append({"kind": "place_ring"})
+                    elif elapsed >= 3.0:
+                        actions.append({"kind": "place_ring"})
 
         elif sub == "bonus_ring" and player_idx == cp:
             # Pressure penalty: player chooses any board space for bonus ring
@@ -231,19 +231,17 @@ class TamskEngine(GameEngine):
                     })
             actions.append({"kind": "skip_bonus_ring"})
 
-        elif sub == "opponent_ring" and player_idx != cp:
-            # Opponent gets to place a ring where current player skipped
-            actions = [
-                {"kind": "opponent_ring"},
-                {"kind": "skip_opponent_ring"},
-            ]
-
-        # Level 3: non-current player can activate pressure
+        # Level 3: non-current player can flip pressure timer (only at zero)
         if (state["level"] == 3
-                and sub == "move"
-                and player_idx != cp
-                and not state["pressure_timer"]["active"]):
-            actions.append({"kind": "activate_pressure"})
+                and sub in ("move", "ring_window")
+                and player_idx != cp):
+            pt = state["pressure_timer"]
+            now = time.time()
+            remaining = pt["timer_remaining"]
+            if pt["timer_started_at"] is not None:
+                remaining = max(0, remaining - (now - pt["timer_started_at"]))
+            if remaining <= 0:
+                actions.append({"kind": "activate_pressure"})
 
         return actions
 
@@ -359,22 +357,37 @@ class TamskEngine(GameEngine):
                 moved.append(hid)
 
         state["consecutive_passes"] = 0
-        state["sub_phase"] = "place_ring"
 
         player_name = state["players"][player_idx]["name"]
         log.append(f"{player_name} moved {hid} to {dest}.")
 
-        return ActionResult(state, log=log)
+        # Enter ring window if destination can accept a ring and someone has rings
+        space = state["board"][dest]
+        any_rings = any(p["rings_remaining"] > 0 for p in state["players"])
+        if len(space["rings"]) < space["capacity"] and any_rings:
+            state["sub_phase"] = "ring_window"
+            state["ring_window_start"] = time.time()
+            state["ring_window_space"] = dest
+            state["ring_window_mover"] = player_idx
+            return ActionResult(state, log=log)
+
+        # No ring window — check bonus rings or advance turn
+        return self._maybe_enter_bonus_ring_phase(state, player_idx, log)
 
     def _apply_place_ring(self, state, player_id, player_idx, action):
-        if state["phase"] != "play" or state.get("sub_phase") != "place_ring":
-            raise ValueError("Not in place_ring phase")
-        if player_idx != state["current_player"]:
-            raise ValueError("Not your turn")
+        if state["phase"] != "play" or state.get("sub_phase") != "ring_window":
+            raise ValueError("Not in ring_window phase")
 
-        space_key = state.get("moved_to_space")
+        space_key = state.get("ring_window_space")
         if not space_key:
-            raise ValueError("No space to place ring on")
+            raise ValueError("No space for ring placement")
+
+        # Validate timing: first 3s mover only, after 3s either player
+        now = time.time()
+        elapsed = now - (state.get("ring_window_start") or now)
+        mover_idx = state.get("ring_window_mover")
+        if elapsed < 3.0 and player_idx != mover_idx:
+            raise ValueError("Ring window: mover has priority for first 3 seconds")
 
         space = state["board"][space_key]
         player = state["players"][player_idx]
@@ -390,85 +403,12 @@ class TamskEngine(GameEngine):
         player_name = player["name"]
         log = [f"{player_name} placed a ring at {space_key}. ({player['rings_remaining']} remaining)"]
 
-        # Check if player has bonus rings to place (Level 3 pressure penalty)
-        return self._maybe_enter_bonus_ring_phase(state, player_idx, log)
+        # Clear ring window state
+        state["ring_window_start"] = None
+        state["ring_window_space"] = None
+        state["ring_window_mover"] = None
 
-    def _apply_skip_ring(self, state, player_id, player_idx, action):
-        if state["phase"] != "play" or state.get("sub_phase") != "place_ring":
-            raise ValueError("Not in place_ring phase")
-        if player_idx != state["current_player"]:
-            raise ValueError("Not your turn")
-
-        player_name = state["players"][player_idx]["name"]
-        log = [f"{player_name} skipped placing a ring."]
-
-        # Rule: opponent may place one of THEIR rings on the space where
-        # the current player declined.  Check if they can.
-        space_key = state.get("moved_to_space")
-        opponent_idx = 1 - player_idx
-        opponent = state["players"][opponent_idx]
-        can_opponent_place = False
-        if space_key:
-            space = state["board"][space_key]
-            can_opponent_place = (
-                len(space["rings"]) < space["capacity"]
-                and opponent["rings_remaining"] > 0
-            )
-
-        if can_opponent_place:
-            # Enter opponent_ring sub-phase: opponent decides before their turn
-            state["sub_phase"] = "opponent_ring"
-            state["opponent_ring_space"] = space_key
-            log.append(f"{opponent['name']} may place a ring on {space_key}.")
-            return ActionResult(state, log=log)
-
-        # No opportunity for opponent — check for bonus rings then advance
-        return self._maybe_enter_bonus_ring_phase(state, player_idx, log)
-
-    def _apply_opponent_ring(self, state, player_id, player_idx, action):
-        """Opponent places their ring on the space the current player skipped."""
-        if state["phase"] != "play" or state.get("sub_phase") != "opponent_ring":
-            raise ValueError("Not in opponent_ring phase")
-        # The opponent is the one acting — they are NOT the current_player
-        if player_idx == state["current_player"]:
-            raise ValueError("Only the opponent can act in opponent_ring phase")
-
-        space_key = state.get("opponent_ring_space")
-        if not space_key:
-            raise ValueError("No space recorded for opponent ring")
-
-        space = state["board"][space_key]
-        player = state["players"][player_idx]
-
-        if len(space["rings"]) >= space["capacity"]:
-            raise ValueError("Space is at max capacity")
-        if player["rings_remaining"] <= 0:
-            raise ValueError("No rings remaining")
-
-        space["rings"].append(player["color"])
-        player["rings_remaining"] -= 1
-
-        player_name = player["name"]
-        log = [f"{player_name} placed a ring at {space_key} (opponent skipped). "
-               f"({player['rings_remaining']} remaining)"]
-
-        state["opponent_ring_space"] = None
-        # Bonus rings belong to the current player (whose turn it still is)
-        cp = state["current_player"]
-        return self._maybe_enter_bonus_ring_phase(state, cp, log)
-
-    def _apply_skip_opponent_ring(self, state, player_id, player_idx, action):
-        """Opponent declines to place a ring on the skipped space."""
-        if state["phase"] != "play" or state.get("sub_phase") != "opponent_ring":
-            raise ValueError("Not in opponent_ring phase")
-        if player_idx == state["current_player"]:
-            raise ValueError("Only the opponent can act in opponent_ring phase")
-
-        player_name = state["players"][player_idx]["name"]
-        log = [f"{player_name} declined to place a ring on the skipped space."]
-
-        state["opponent_ring_space"] = None
-        # Bonus rings belong to the current player (whose turn it still is)
+        # Bonus rings belong to the current player (whose turn it is)
         cp = state["current_player"]
         return self._maybe_enter_bonus_ring_phase(state, cp, log)
 
@@ -554,44 +494,38 @@ class TamskEngine(GameEngine):
     def _apply_activate_pressure(self, state, player_id, player_idx):
         if state["level"] != 3:
             raise ValueError("Pressure timer only available in Level 3")
-        if state["phase"] != "play" or state.get("sub_phase") != "move":
+        if state["phase"] != "play" or state.get("sub_phase") not in ("move", "ring_window"):
             raise ValueError("Can only activate pressure during opponent's move")
         if player_idx == state["current_player"]:
             raise ValueError("Cannot activate pressure on your own turn")
-        if state["pressure_timer"]["active"]:
-            raise ValueError("Pressure timer already active")
 
         pt = state["pressure_timer"]
         now = time.time()
 
-        # Flip the hourglass — same logic as player hourglasses
-        if pt["timer_started_at"] is None:
-            # Sand was not flowing — flip uses whatever sand is on top
-            # (full 15s if never used, or whatever remained after last drain)
-            pt["timer_remaining"] = pt["timer_remaining"]  # stays as-is
-        else:
-            # Sand was flowing — compute current remaining, then invert
-            elapsed = now - pt["timer_started_at"]
-            current = max(0, pt["timer_remaining"] - elapsed)
-            pt["timer_remaining"] = PRESSURE_TIMER_SECS - current
+        # Validate: timer must be at zero to flip
+        remaining = pt["timer_remaining"]
+        if pt["timer_started_at"] is not None:
+            remaining = max(0, remaining - (now - pt["timer_started_at"]))
+        if remaining > 0:
+            raise ValueError("Pressure timer has not fully drained yet")
 
-        # If it had fully drained, flipping gives full timer
-        if pt["timer_remaining"] <= 0:
-            pt["timer_remaining"] = PRESSURE_TIMER_SECS
-
+        # Flip: full 15s, start flowing
+        pt["timer_remaining"] = PRESSURE_TIMER_SECS
         pt["timer_started_at"] = now
         pt["active"] = True
         pt["activated_by"] = player_id
 
         player_name = state["players"][player_idx]["name"]
-        remaining = pt["timer_remaining"]
-        log = [f"{player_name} flipped the pressure timer! ({remaining:.0f}s)"]
+        log = [f"{player_name} flipped the pressure timer! ({PRESSURE_TIMER_SECS}s)"]
         return ActionResult(state, log=log)
 
     # ── Turn advancement ─────────────────────────────────
 
     def _advance_turn(self, state, log):
         state["moved_to_space"] = None
+        state["ring_window_start"] = None
+        state["ring_window_space"] = None
+        state["ring_window_mover"] = None
         state["sub_phase"] = "move"
 
         # Switch player
@@ -642,9 +576,10 @@ class TamskEngine(GameEngine):
     # ── Timer logic ──────────────────────────────────────
 
     def _check_timers(self, state):
-        """Update hourglass timers and mark dead ones. Mutates state in place."""
-        if state["level"] < 2:
-            return
+        """Update hourglass timers and mark dead ones. Mutates state in place.
+        Returns True if game ended due to timer deaths."""
+        if state["level"] < 2 or state.get("game_over"):
+            return False
         now = time.time()
         for h in state["hourglasses"].values():
             if h["is_dead"] or h["timer_started_at"] is None:
@@ -670,6 +605,56 @@ class TamskEngine(GameEngine):
                     pt["timer_started_at"] = None  # sand stopped
                 else:
                     pt["timer_started_at"] = now
+
+        # Auto-expire ring window (>6s) so views show correct sub_phase
+        if state.get("sub_phase") == "ring_window" and state.get("ring_window_start"):
+            rw_elapsed = now - state["ring_window_start"]
+            if rw_elapsed >= 6.0:
+                state["sub_phase"] = "move"
+                state["ring_window_start"] = None
+                state["ring_window_space"] = None
+                state["ring_window_mover"] = None
+
+        # Check if all of one player's hourglasses are dead → game over
+        for pidx in (0, 1):
+            color = state["players"][pidx]["color"]
+            all_dead = all(
+                h["is_dead"] for h in state["hourglasses"].values()
+                if h["color"] == color
+            )
+            if all_dead:
+                opp_idx = 1 - pidx
+                my_remaining = state["players"][pidx]["rings_remaining"]
+                opp_remaining = state["players"][opp_idx]["rings_remaining"]
+                # Player with all dead hourglasses and more rings remaining loses
+                if my_remaining > opp_remaining:
+                    state["game_over"] = True
+                    state["phase"] = "game_over"
+                    state["sub_phase"] = None
+                    state["winner"] = state["players"][opp_idx]["player_id"]
+                    return True
+                elif my_remaining == opp_remaining:
+                    # Check if BOTH players have all dead
+                    other_color = state["players"][opp_idx]["color"]
+                    other_all_dead = all(
+                        h["is_dead"] for h in state["hourglasses"].values()
+                        if h["color"] == other_color
+                    )
+                    if other_all_dead:
+                        # Both all dead, tied on rings — draw
+                        state["game_over"] = True
+                        state["phase"] = "game_over"
+                        state["sub_phase"] = None
+                        state["winner"] = None
+                        return True
+                    # Only one player all dead but tied on rings — they still lose
+                    # (opponent has surviving hourglasses = tiebreaker)
+                    state["game_over"] = True
+                    state["phase"] = "game_over"
+                    state["sub_phase"] = None
+                    state["winner"] = state["players"][opp_idx]["player_id"]
+                    return True
+        return False
 
     def _resolve_pressure_timer(self, state, player_idx, log):
         """Check if the pressure timer expired before the player moved.
@@ -700,22 +685,46 @@ class TamskEngine(GameEngine):
         pt["active"] = False
 
     def _check_game_over_from_timers(self, state, log):
-        """Check if all hourglasses of both players are dead."""
+        """Check if all hourglasses of a player are dead."""
         if state["level"] < 2:
             return None
 
-        for color in ("black", "red"):
+        for pidx in (0, 1):
+            color = state["players"][pidx]["color"]
             all_dead = all(
-                h["is_dead"]
-                for h in state["hourglasses"].values()
+                h["is_dead"] for h in state["hourglasses"].values()
                 if h["color"] == color
             )
             if all_dead:
-                player_idx = 0 if color == "black" else 1
-                state["players"][player_idx]["passed"] = True
+                opp_idx = 1 - pidx
+                player_name = state["players"][pidx]["name"]
+                opp_name = state["players"][opp_idx]["name"]
+                log.append(f"All of {player_name}'s hourglasses are dead.")
 
-        if all(p["passed"] for p in state["players"]):
-            return self._end_game(state, log)
+                my_remaining = state["players"][pidx]["rings_remaining"]
+                opp_remaining = state["players"][opp_idx]["rings_remaining"]
+
+                if my_remaining > opp_remaining:
+                    log.append(f"{opp_name} wins! (more rings placed)")
+                    state["winner"] = state["players"][opp_idx]["player_id"]
+                    return self._end_game(state, log)
+                elif my_remaining == opp_remaining:
+                    # Tied on rings — opponent has surviving hourglasses
+                    opp_color = state["players"][opp_idx]["color"]
+                    opp_all_dead = all(
+                        h["is_dead"] for h in state["hourglasses"].values()
+                        if h["color"] == opp_color
+                    )
+                    if opp_all_dead:
+                        return self._end_game(state, log)
+                    log.append(f"{opp_name} wins by tiebreaker (surviving hourglasses).")
+                    state["winner"] = state["players"][opp_idx]["player_id"]
+                    return self._end_game(state, log)
+                else:
+                    # Dead player actually placed more rings — they win
+                    log.append(f"{player_name} wins! (more rings placed)")
+                    state["winner"] = state["players"][pidx]["player_id"]
+                    return self._end_game(state, log)
 
         return None
 

@@ -277,7 +277,7 @@ const HEX_CAPACITY_STROKES = [
 
 // ─── HEX CELL COMPONENT ───────────────────────────────────────────
 
-function HexCell({ q, r, space, hourglass, isValidDest, isSelected, onClick, level, getRemaining, myColor, showRings }) {
+function HexCell({ q, r, space, hourglass, isValidDest, isSelected, isRingWindow, canPlaceRing: cellCanPlace, ringWindowStart, isHovered, onClick, onHover, level, getRemaining, myColor, showRings }) {
   const { x, y } = hexToPixel(q, r);
   const cap = space?.capacity || ringCapacity(q, r);
   const rings = space?.rings || [];
@@ -293,8 +293,17 @@ function HexCell({ q, r, space, hourglass, isValidDest, isSelected, onClick, lev
     strokeWidth = 3;
     fillColor = "#2a3a20";
   }
+  if (isHovered) {
+    fillColor = "#3a4a28";
+    strokeColor = "#6cdf80";
+    strokeWidth = 3;
+  }
   if (isSelected) {
     strokeColor = "#ffeb3b";
+    strokeWidth = 3;
+  }
+  if (isRingWindow && cellCanPlace) {
+    strokeColor = "#c9a84c";
     strokeWidth = 3;
   }
 
@@ -304,6 +313,8 @@ function HexCell({ q, r, space, hourglass, isValidDest, isSelected, onClick, lev
   return (
     <g
       onClick={onClick}
+      onMouseEnter={onHover ? () => onHover(true) : undefined}
+      onMouseLeave={onHover ? () => onHover(false) : undefined}
       style={{ cursor: onClick ? "pointer" : "default" }}
     >
       {/* Hex background */}
@@ -313,6 +324,19 @@ function HexCell({ q, r, space, hourglass, isValidDest, isSelected, onClick, lev
         stroke={strokeColor}
         strokeWidth={strokeWidth}
       />
+
+      {/* Ring window animation — fading ring hint */}
+      {isRingWindow && cellCanPlace && (
+        <circle
+          cx={x}
+          cy={y}
+          r={HEX_SIZE * 0.35}
+          fill="none"
+          stroke="#c9a84c"
+          strokeWidth={3}
+          style={{ animation: "ring-fade 3s ease-out forwards" }}
+        />
+      )}
 
       {/* Ring indicators — only when toggle is on */}
       {showRings && rings.map((color, i) => {
@@ -414,7 +438,7 @@ function HexCell({ q, r, space, hourglass, isValidDest, isSelected, onClick, lev
 
 // ─── HEX BOARD ─────────────────────────────────────────────────────
 
-function HexBoard({ state, selectedHourglass, setSelectedHourglass, submitAction, myColor, level, getRemaining, bonusRingSpaces, showRings }) {
+function HexBoard({ state, selectedHourglass, setSelectedHourglass, submitAction, myColor, level, getRemaining, bonusRingSpaces, showRings, ringWindowSpace, ringWindowStart, canPlaceRing, hoveredHex, setHoveredHex }) {
   const board = state.board;
   const hourglasses = state.hourglasses || {};
   const validActions = state.valid_actions || [];
@@ -460,6 +484,12 @@ function HexBoard({ state, selectedHourglass, setSelectedHourglass, submitAction
     const key = hexKey(q, r);
     const hg = posToHourglass[key];
 
+    // Ring window — click the destination hourglass to place a ring
+    if (state.sub_phase === "ring_window" && key === ringWindowSpace && canPlaceRing) {
+      submitAction({ kind: "place_ring" });
+      return;
+    }
+
     // Bonus ring placement — click any highlighted space
     if (isBonusPhase && bonusRingSpaces.has(key)) {
       submitAction({ kind: "place_bonus_ring", space: key });
@@ -492,6 +522,8 @@ function HexBoard({ state, selectedHourglass, setSelectedHourglass, submitAction
         const key = hexKey(q, r);
         const hg = posToHourglass[key];
         const isBonusDest = isBonusPhase && bonusRingSpaces.has(key);
+        const isRingWindow = state.sub_phase === "ring_window" && key === ringWindowSpace;
+        const isHovered = hoveredHex === key && isBonusDest;
         return (
           <HexCell
             key={key}
@@ -501,7 +533,12 @@ function HexBoard({ state, selectedHourglass, setSelectedHourglass, submitAction
             hourglass={hg}
             isValidDest={validDests.has(key) || isBonusDest}
             isSelected={hg && selectedHourglass === hg.id}
+            isRingWindow={isRingWindow}
+            canPlaceRing={isRingWindow && canPlaceRing}
+            ringWindowStart={isRingWindow ? ringWindowStart : null}
+            isHovered={isHovered}
             onClick={() => handleCellClick(q, r)}
+            onHover={setHoveredHex ? (entering) => setHoveredHex(entering ? key : null) : undefined}
             level={level}
             getRemaining={getRemaining}
             myColor={myColor}
@@ -756,12 +793,12 @@ function GameBoard({ game }) {
     }
   }, [state.auto_passed, state.turn_number]);
 
-  // Can place ring?
+  // Ring window (timed click to place ring)
   const canPlaceRing = validActions.some(a => a.kind === "place_ring");
-  const canSkipRing = validActions.some(a => a.kind === "skip_ring");
-  // Opponent ring opportunity (opponent skipped placing)
-  const canOpponentRing = validActions.some(a => a.kind === "opponent_ring");
-  const canSkipOpponentRing = validActions.some(a => a.kind === "skip_opponent_ring");
+  const ringWindowSpace = state.ring_window_space;
+  const ringWindowStart = state.ring_window_start;
+  const ringWindowMover = state.ring_window_mover;
+
   // Bonus ring (pressure penalty)
   const canBonusRing = validActions.some(a => a.kind === "place_bonus_ring");
   const canSkipBonusRing = validActions.some(a => a.kind === "skip_bonus_ring");
@@ -770,6 +807,31 @@ function GameBoard({ game }) {
   }, [validActions]);
   // Can activate pressure?
   const canPressure = validActions.some(a => a.kind === "activate_pressure");
+
+  // Bonus ring popup
+  const showBonusPopup = subPhase === "bonus_ring" && isCurrent && canBonusRing;
+
+  // Hover state for bonus ring hex highlighting
+  const [hoveredHex, setHoveredHex] = useState(null);
+
+  // Turn banner — strong notification when it becomes your turn
+  const [showTurnBanner, setShowTurnBanner] = useState(false);
+  const prevYourTurn = useRef(false);
+  useEffect(() => {
+    if (yourTurn && !prevYourTurn.current && state.phase === "play") {
+      setShowTurnBanner(true);
+      const t = setTimeout(() => setShowTurnBanner(false), 2000);
+      return () => clearTimeout(t);
+    }
+    prevYourTurn.current = yourTurn;
+  }, [yourTurn, state.phase]);
+
+  // Deselect hourglass if its timer hits zero
+  useEffect(() => {
+    if (!selectedHourglass || !state.hourglasses) return;
+    const h = state.hourglasses[selectedHourglass];
+    if (h && getRemaining(h) <= 0) setSelectedHourglass(null);
+  }, [selectedHourglass, state.hourglasses, getRemaining]);
 
   // Pressure timer state — persistent hourglass, always shown in Level 3
   const pressureTimer = state.pressure_timer;
@@ -839,6 +901,11 @@ function GameBoard({ game }) {
               level={level}
               getRemaining={getRemaining}
               showRings={showRings}
+              ringWindowSpace={null}
+              ringWindowStart={null}
+              canPlaceRing={false}
+              hoveredHex={null}
+              setHoveredHex={null}
             />
             <RingsToggle showRings={showRings} setShowRings={setShowRings} />
           </div>
@@ -867,20 +934,20 @@ function GameBoard({ game }) {
               Level {level}
             </div>
             <div style={{
-              padding: "4px 12px", borderRadius: 12, fontSize: 12,
-              background: isCurrent ? "rgba(39,174,96,0.2)" : "rgba(255,255,255,0.05)",
-              border: `1px solid ${isCurrent ? "#27ae60" : "#30363d"}`,
+              padding: isCurrent ? "6px 16px" : "4px 12px",
+              borderRadius: 12, fontSize: isCurrent ? 14 : 12, fontWeight: isCurrent ? 700 : 400,
+              background: isCurrent ? "rgba(39,174,96,0.25)" : "rgba(255,255,255,0.05)",
+              border: `2px solid ${isCurrent ? "#27ae60" : "#30363d"}`,
               color: isCurrent ? "#27ae60" : "#888",
+              animation: isCurrent ? "pulse-turn 2s ease-in-out infinite" : undefined,
             }}>
               {subPhase === "bonus_ring" && isCurrent
-                ? "Place bonus ring (pressure penalty)"
+                ? "Place bonus ring"
                 : subPhase === "bonus_ring" && !isCurrent
                 ? `${opp.name} placing bonus ring`
-                : subPhase === "opponent_ring" && !isCurrent
-                ? "Place a ring? (opponent skipped)"
-                : subPhase === "opponent_ring" && isCurrent
-                ? `${opp.name} may place a ring`
-                : isCurrent ? (subPhase === "place_ring" ? "Place a ring" : "Move an hourglass") : `${opp.name}'s turn`}
+                : subPhase === "ring_window"
+                ? "Ring placement window"
+                : isCurrent ? "Your turn — move an hourglass" : `${opp.name}'s turn`}
             </div>
           </div>
         </div>
@@ -894,22 +961,29 @@ function GameBoard({ game }) {
         {/* Pressure timer display — always visible in Level 3 */}
         {level === 3 && pressureTimer && (() => {
           const isActive = pressureTimer.active;
-          const isFlowing = !!pressureTimer.timer_started_at;
-          const borderColor = isActive ? "#e74c3c" : isFlowing ? "#ff9800" : "#30363d";
-          const bgColor = isActive ? "rgba(231,76,60,0.1)" : isFlowing ? "rgba(255,152,0,0.06)" : "rgba(0,0,0,0.2)";
-          const textColor = isActive ? "#e74c3c" : isFlowing ? "#ff9800" : "#888";
-          const label = isActive ? "PRESSURE (ACTIVE)" : isFlowing ? "PRESSURE (ticking)" : "PRESSURE TIMER";
+          const atZero = pressureRemaining <= 0;
+          const borderColor = isActive ? "#e74c3c" : "#30363d";
+          const bgColor = isActive ? "rgba(231,76,60,0.1)" : "rgba(0,0,0,0.2)";
+          const textColor = isActive ? "#e74c3c" : "#888";
+          const label = isActive ? "PRESSURE ACTIVE" : "PRESSURE TIMER";
           return (
             <div style={{
               ...S.card, textAlign: "center", padding: 12,
-              border: `1px solid ${borderColor}`, background: bgColor,
+              border: `2px solid ${borderColor}`, background: bgColor,
               display: "flex", justifyContent: "center", alignItems: "center", gap: 12,
+              animation: canPressure ? "pulse-pressure 1s ease-in-out infinite" : undefined,
             }}>
               <span style={{ fontSize: 14, color: textColor, fontWeight: 700 }}>
                 {label}: {formatTime(pressureRemaining)}
               </span>
+              {atZero && !isActive && !isCurrent && (
+                <span style={{ fontSize: 11, color: "#4caf50", fontWeight: 700 }}>READY</span>
+              )}
               {canPressure && (
-                <button style={{ ...S.btn, ...S.btnDanger, padding: "4px 12px", fontSize: 12 }}
+                <button style={{
+                  ...S.btn, ...S.btnP, padding: "6px 16px", fontSize: 13,
+                  animation: "pulse-pressure 1s ease-in-out infinite",
+                }}
                   onClick={() => submitAction({ kind: "activate_pressure" })}>
                   Flip Timer
                 </button>
@@ -942,51 +1016,53 @@ function GameBoard({ game }) {
             getRemaining={getRemaining}
             bonusRingSpaces={bonusRingSpaces}
             showRings={showRings}
+            ringWindowSpace={ringWindowSpace}
+            ringWindowStart={ringWindowStart}
+            canPlaceRing={canPlaceRing}
+            hoveredHex={hoveredHex}
+            setHoveredHex={setHoveredHex}
           />
           <RingsToggle showRings={showRings} setShowRings={setShowRings} />
         </div>
 
-        {/* Action buttons */}
-        <div style={{ ...S.card, display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-          {subPhase === "move" && isCurrent && (
-            <div style={{ fontSize: 13, color: "#888", padding: "4px 0" }}>
+        {/* Action hints */}
+        {subPhase === "move" && isCurrent && (
+          <div style={{ ...S.card, textAlign: "center", padding: 12 }}>
+            <div style={{ fontSize: 13, color: "#888" }}>
               {selectedHourglass
                 ? "Click a highlighted space to move there, or click another hourglass"
                 : "Click one of your hourglasses to select it"}
             </div>
-          )}
+          </div>
+        )}
 
-          {canPlaceRing && (
-            <button style={bs(true)} onClick={() => submitAction({ kind: "place_ring" })}>
-              Place Ring
-            </button>
-          )}
-          {canSkipRing && (
-            <button style={bs(false)} onClick={() => submitAction({ kind: "skip_ring" })}>
-              Skip Ring
-            </button>
-          )}
-          {canOpponentRing && (
-            <button style={bs(true)} onClick={() => submitAction({ kind: "opponent_ring" })}>
-              Place Ring (Opponent Skipped!)
-            </button>
-          )}
-          {canSkipOpponentRing && (
-            <button style={bs(false)} onClick={() => submitAction({ kind: "skip_opponent_ring" })}>
-              Decline
-            </button>
-          )}
-          {canBonusRing && (
-            <div style={{ fontSize: 13, color: "#ff9800", padding: "4px 0" }}>
-              Pressure penalty — click any space to place a bonus ring
+        {/* Bonus ring popup overlay */}
+        {showBonusPopup && (
+          <div style={{
+            position: "fixed", inset: 0, zIndex: 100,
+            background: "rgba(0,0,0,0.6)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            pointerEvents: "auto",
+          }}>
+            <div style={{
+              ...S.card, maxWidth: 360, textAlign: "center",
+              border: "2px solid #ff9800", background: "rgba(22,27,34,0.98)",
+            }}>
+              <div style={{ fontSize: 20, color: "#ff9800", fontWeight: 700, marginBottom: 8, fontFamily: font }}>
+                Bonus Ring
+              </div>
+              <div style={{ fontSize: 14, color: "#e8d5a3", marginBottom: 16 }}>
+                Pressure timer penalty — click any hex on the board to place your bonus ring.
+              </div>
+              <button
+                style={{ ...S.btn, fontSize: 11, opacity: 0.5, padding: "4px 12px" }}
+                onClick={() => submitAction({ kind: "skip_bonus_ring" })}
+              >
+                Decline
+              </button>
             </div>
-          )}
-          {canSkipBonusRing && (
-            <button style={bs(false)} onClick={() => submitAction({ kind: "skip_bonus_ring" })}>
-              Skip Bonus Ring
-            </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Error */}
         {game.error && (
@@ -998,6 +1074,45 @@ function GameBoard({ game }) {
         {/* Game log */}
         <GameLog logs={gameLogs} logRef={logRef} />
       </div>
+
+      {/* Turn banner overlay */}
+      {showTurnBanner && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 200,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          pointerEvents: "none",
+          animation: "fade-out 2s ease-out forwards",
+        }}>
+          <div style={{
+            fontSize: 48, fontWeight: 900, fontFamily: font,
+            color: "#c9a84c", textShadow: "0 0 40px rgba(201,168,76,0.6), 0 4px 20px rgba(0,0,0,0.8)",
+            letterSpacing: 6,
+          }}>
+            YOUR TURN
+          </div>
+        </div>
+      )}
+
+      {/* CSS animations */}
+      <style>{`
+        @keyframes fade-out {
+          0% { opacity: 1; }
+          60% { opacity: 1; }
+          100% { opacity: 0; }
+        }
+        @keyframes pulse-turn {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(39,174,96,0.4); }
+          50% { box-shadow: 0 0 12px 4px rgba(39,174,96,0.3); }
+        }
+        @keyframes pulse-pressure {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(201,168,76,0.4); }
+          50% { box-shadow: 0 0 12px 4px rgba(201,168,76,0.3); }
+        }
+        @keyframes ring-fade {
+          0% { opacity: 0.8; stroke-width: 4; }
+          100% { opacity: 0; stroke-width: 1; }
+        }
+      `}</style>
     </div>
   );
 }
