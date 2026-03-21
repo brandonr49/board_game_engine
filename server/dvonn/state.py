@@ -6,8 +6,11 @@ TOTAL_SPACES = 49  # sum(ROW_SIZES)
 PIECES_PER_PLAYER = 23
 DVONN_PIECE_COUNT = 3
 
-# Column offsets: rows 0,1,2 start at col 0; rows 3,4 are shifted right by 1
-COL_OFFSETS = [0, 0, 0, 1, 1]
+# All rows start at col 0; the diamond shape comes from visual indentation
+COL_OFFSETS = [0, 0, 0, 0, 0]
+
+# Half-hex-width indentation per row (symmetric diamond)
+ROW_INDENT = [2, 1, 0, 1, 2]
 
 
 # ── Coordinate helpers ────────────────────────────────
@@ -28,6 +31,35 @@ def is_valid_position(row, col):
     return offset <= col < offset + ROW_SIZES[row]
 
 
+# ── Cube coordinate conversion ───────────────────────
+# We use cube coordinates (q, r, s where q+r+s=0) for hex math.
+# The conversion accounts for the diamond layout indentation.
+
+def _to_cube(row, col):
+    """Convert offset (row, col) to cube coordinates (q, r)."""
+    q = (ROW_INDENT[row] + col * 2 - row) // 2
+    r = row
+    return q, r
+
+
+def _from_cube(q, r):
+    """Convert cube (q, r) back to offset (row, col). Returns None if invalid."""
+    if r < 0 or r >= len(ROW_SIZES):
+        return None
+    col = (2 * q - ROW_INDENT[r] + r) // 2
+    # Verify the conversion is exact (no rounding errors)
+    check_val = ROW_INDENT[r] + col * 2 - r
+    if check_val != 2 * q:
+        return None
+    if not is_valid_position(r, col):
+        return None
+    return r, col
+
+
+# 6 cube directions: (dq, dr) pairs (ds = -dq - dr is implicit)
+_CUBE_DIRS = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, -1), (-1, 1)]
+
+
 # ── Board generation ──────────────────────────────────
 
 def generate_board():
@@ -45,35 +77,13 @@ def generate_board():
 
 
 # ── Neighbor calculation ──────────────────────────────
-# The board uses an offset hex grid (pointy-top orientation).
-# Rows 0,1,2 have offset 0; rows 3,4 have offset 1.
-# For adjacency, we convert to axial coordinates:
-#   axial_q = col - offset
-#   axial_r = row
-# Axial neighbors of (q, r): (q+1,r), (q-1,r), (q,r+1), (q,r-1), (q+1,r-1), (q-1,r+1)
-
-def _to_axial(row, col):
-    return col - COL_OFFSETS[row], row
-
-
-def _from_axial(q, r):
-    if r < 0 or r >= len(ROW_SIZES):
-        return None
-    col = q + COL_OFFSETS[r]
-    if not is_valid_position(r, col):
-        return None
-    return r, col
-
-
-_AXIAL_DIRS = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, -1), (-1, 1)]
-
 
 def get_neighbors(row, col):
     """Return list of valid (row, col) neighbors on the board."""
-    q, r = _to_axial(row, col)
+    q, r = _to_cube(row, col)
     result = []
-    for dq, dr in _AXIAL_DIRS:
-        pos = _from_axial(q + dq, r + dr)
+    for dq, dr in _CUBE_DIRS:
+        pos = _from_cube(q + dq, r + dr)
         if pos is not None:
             result.append(pos)
     return result
@@ -90,12 +100,12 @@ def get_line_destinations(board, row, col, stack_height):
     if stack_height < 1:
         return []
 
-    q, r = _to_axial(row, col)
+    q, r = _to_cube(row, col)
     destinations = []
 
-    for dq, dr in _AXIAL_DIRS:
+    for dq, dr in _CUBE_DIRS:
         tq, tr = q + dq * stack_height, r + dr * stack_height
-        pos = _from_axial(tq, tr)
+        pos = _from_cube(tq, tr)
         if pos is None:
             continue
         dest_key = board_key(pos[0], pos[1])
@@ -106,12 +116,12 @@ def get_line_destinations(board, row, col, stack_height):
 
 
 def is_straight_line(from_row, from_col, to_row, to_col, distance):
-    """Check if (from) to (to) is a straight axial line of given distance."""
-    fq, fr = _to_axial(from_row, from_col)
-    tq, tr = _to_axial(to_row, to_col)
+    """Check if (from) to (to) is a straight cube-coordinate line of given distance."""
+    fq, fr = _to_cube(from_row, from_col)
+    tq, tr = _to_cube(to_row, to_col)
     dq, dr = tq - fq, tr - fr
 
-    for dirq, dirr in _AXIAL_DIRS:
+    for dirq, dirr in _CUBE_DIRS:
         if dq == dirq * distance and dr == dirr * distance:
             return True
     return False

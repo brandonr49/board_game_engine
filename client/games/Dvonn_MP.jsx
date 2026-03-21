@@ -6,10 +6,10 @@ const WS_URL = `ws://${window.location.hostname}:8765`;
 // ─── CONSTANTS ─────────────────────────────────────────────────────
 
 const ROW_SIZES = [9, 10, 11, 10, 9];
-const COL_OFFSETS = [0, 0, 0, 1, 1];
+const COL_OFFSETS = [0, 0, 0, 0, 0];
 
-// Axial direction vectors (same 6 directions as server)
-const AXIAL_DIRS = [[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
+// Half-hex-width indentation per row (symmetric diamond)
+const ROW_INDENT = [2, 1, 0, 1, 2];
 
 const PIECE_COLORS = {
   white: { fill: "#e8e0d0", stroke: "#888", text: "#333" },
@@ -19,30 +19,14 @@ const PIECE_COLORS = {
 
 const HEX_SIZE = 30;
 const SQRT3 = Math.sqrt(3);
+const HEX_WIDTH = SQRT3 * HEX_SIZE;
+const HALF_HEX_WIDTH = HEX_WIDTH / 2;
+const VERT_SPACING = 1.5 * HEX_SIZE;
 
 // ─── HEX MATH ──────────────────────────────────────────────────────
 
 function boardKey(row, col) { return `${row},${col}`; }
 function parseKey(key) { const [r, c] = key.split(",").map(Number); return [r, c]; }
-
-function toAxial(row, col) { return [col - COL_OFFSETS[row], row]; }
-function fromAxial(q, r) {
-  if (r < 0 || r >= ROW_SIZES.length) return null;
-  const col = q + COL_OFFSETS[r];
-  const offset = COL_OFFSETS[r];
-  if (col < offset || col >= offset + ROW_SIZES[r]) return null;
-  return [r, col];
-}
-
-function getNeighbors(row, col) {
-  const [q, r] = toAxial(row, col);
-  const result = [];
-  for (const [dq, dr] of AXIAL_DIRS) {
-    const pos = fromAxial(q + dq, r + dr);
-    if (pos) result.push(pos);
-  }
-  return result;
-}
 
 // Generate all 49 board positions
 function allPositions() {
@@ -58,21 +42,19 @@ function allPositions() {
 
 const ALL_POSITIONS = allPositions();
 
-// Pointy-top hex to pixel (row-based offset layout)
+// Pointy-top hex to pixel (diamond layout)
 function hexToPixel(row, col) {
-  const [q, r] = toAxial(row, col);
-  // Flat-top orientation for an elongated horizontal board
   return {
-    x: HEX_SIZE * 1.5 * q,
-    y: HEX_SIZE * (SQRT3 / 2 * q + SQRT3 * r),
+    x: (ROW_INDENT[row] + col * 2) * HALF_HEX_WIDTH,
+    y: row * VERT_SPACING,
   };
 }
 
-// Flat-top hex polygon points
+// Pointy-top hex polygon points
 function hexPoints(cx, cy) {
   const pts = [];
   for (let i = 0; i < 6; i++) {
-    const angle = (Math.PI / 180) * (60 * i);
+    const angle = (Math.PI / 180) * (60 * i - 30);
     pts.push(`${cx + HEX_SIZE * Math.cos(angle)},${cy + HEX_SIZE * Math.sin(angle)}`);
   }
   return pts.join(" ");
@@ -182,12 +164,9 @@ function useGameConnection() {
           setPlayerId(msg.player_id);
           setToken(msg.token);
           tokenRef.current = msg.token;
-          sessionStorage.setItem("game_token", msg.token);
           ws.send(JSON.stringify({ type: "auth", token: msg.token }));
           break;
         case "authenticated":
-          setRoomCode(msg.room_code);
-          setPlayerId(msg.player_id);
           setIsHost(msg.is_host);
           setGameStarted(msg.game_started);
           break;
@@ -224,15 +203,6 @@ function useGameConnection() {
       setTimeout(() => { if (tokenRef.current) connect(); }, 2000);
     };
   }, []);
-
-  // Auto-reconnect from sessionStorage (when launched from main menu)
-  useEffect(() => {
-    const saved = sessionStorage.getItem("game_token");
-    if (saved && !tokenRef.current) {
-      tokenRef.current = saved;
-      connect();
-    }
-  }, [connect]);
 
   const createRoom = (name) => {
     connect(() => send({ type: "create", game: "dvonn", name }));
