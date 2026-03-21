@@ -2,19 +2,19 @@ import { createRoot } from "react-dom/client";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 
 // ─── Game Imports ──────────────────────────────────────
-import BattleLineApp from "./BattleLine_MP.jsx";
-import ArboretumApp from "./Arboretum_MP.jsx";
-import LostCitiesApp from "./LostCities_MP.jsx";
-import DragonApp from "./InTheYearOfTheDragon_MP.jsx";
-import CaylusApp from "./Caylus_MP.jsx";
-import TamskApp from "./Tamsk_MP.jsx";
-import DvonnApp from "./Dvonn_MP.jsx";
-import YinshApp from "./Yinsh_MP.jsx";
-import ZertzApp from "./Zertz_MP.jsx";
-import TzaarApp from "./Tzaar_MP.jsx";
-import GipfApp from "./Gipf_MP.jsx";
-import PunctApp from "./Punct_MP.jsx";
-import LyngkApp from "./Lyngk_MP.jsx";
+import BattleLineApp from "./games/BattleLine_MP.jsx";
+import ArboretumApp from "./games/Arboretum_MP.jsx";
+import LostCitiesApp from "./games/LostCities_MP.jsx";
+import DragonApp from "./games/InTheYearOfTheDragon_MP.jsx";
+import CaylusApp from "./games/Caylus_MP.jsx";
+import TamskApp from "./games/Tamsk_MP.jsx";
+import DvonnApp from "./games/Dvonn_MP.jsx";
+import YinshApp from "./games/Yinsh_MP.jsx";
+import ZertzApp from "./games/Zertz_MP.jsx";
+import TzaarApp from "./games/Tzaar_MP.jsx";
+import GipfApp from "./games/Gipf_MP.jsx";
+import PunctApp from "./games/Punct_MP.jsx";
+import LyngkApp from "./games/Lyngk_MP.jsx";
 
 const WS_URL = `ws://${window.location.hostname}:8765`;
 

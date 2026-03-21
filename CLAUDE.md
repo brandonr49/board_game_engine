@@ -2,11 +2,13 @@
 
 ## Quick Start: Adding a New Game
 
-1. Create `server/<game_name>/` with `engine.py` and `state.py` (add `__init__.py` if needed)
-2. Subclass `GameEngine` from `server/game_engine.py` — implement all 6 abstract methods
-3. Register it in `server/server.py` `run_server()` (~line 372)
-4. Create `Multi_Screen/<GameName>_MP.jsx` — the React multiplayer client
-5. Swap the import in `Multi_Screen/main.jsx` to test your client
+1. Create `server/<game_name>/` with `engine.py`, `state.py`, and `__init__.py`
+2. Add rules to `server/<game_name>/rules/` (PDF, markdown, or text — named `rules.pdf`, `rules.md`, etc.)
+3. Subclass `GameEngine` from `server/game_engine.py` — implement all 6 abstract methods
+4. Register the engine in `server/server.py` `run_server()`
+5. Create `client/games/<GameName>_MP.jsx` — the React multiplayer client
+6. Add the game to the `GAMES` array in `client/main.jsx`
+7. Test with 2+ browser tabs
 
 ---
 
@@ -19,18 +21,24 @@ server/
   <game>/
     engine.py             # GameEngine subclass (all game logic)
     state.py              # Constants, deck/board generation, helpers
+    rules/                # Game rules (PDF, markdown, images)
+      rules.pdf           # Original rulebook
+      rules.md            # Markdown summary (optional)
     (scoring.py etc.)     # Optional: complex subsystems
 
-Multi_Screen/
-  main.jsx                # Entry point — swap import to select game client
-  <GameName>_MP.jsx       # React single-file multiplayer client
+client/
+  main.jsx                # Entry point — game selector, room browser
   PROTOCOL.md             # Full WebSocket message spec
+  games/
+    <GameName>_MP.jsx     # React single-file multiplayer client (one per game)
 
-Single_Screen/            # Legacy hot-seat mode (not primary target)
+legacy/                   # Old single-screen / hot-seat prototypes
+tests/                    # Game engine tests
+tools/                    # Utilities (card ingest, etc.)
 run_server.py             # Server entry point: `python run_server.py`
 ```
 
-The server is game-agnostic. It handles rooms, WebSockets, authentication, reconnection, and broadcasting. Game logic lives entirely in the engine subclass. The client is a single React JSX file per game.
+The server is game-agnostic. It handles rooms, WebSockets, authentication, reconnection, spectators, and broadcasting. Game logic lives entirely in the engine subclass. The client is a single React JSX file per game.
 
 ---
 
@@ -138,9 +146,19 @@ Put constants, deck/board generators, and helper functions here:
 - `generate_deck(player_count)` or similar setup functions
 - Action execution helpers (keep `engine.py` focused on flow)
 
+### Rules Files Convention
+
+Each game keeps its rules in `server/<game>/rules/`:
+- `rules.pdf` — Original rulebook PDF (renamed from whatever the source was)
+- `rules.md` — Markdown summary of key rules (optional but helpful)
+- `rules.txt` — Plain text rules if no PDF available
+- Additional images or reference cards can go here too
+
+Use generic filenames (`rules.pdf`, not `PUNCT_english.pdf`) since the directory already identifies the game.
+
 ### Registering the Engine
 
-In `server/server.py` around line 372, add the import and registration:
+In `server/server.py` inside `run_server()`, add the import and registration:
 ```python
 from server.my_game.engine import MyGameEngine
 server.register_engine("my_game", MyGameEngine)
@@ -150,9 +168,9 @@ The string key (e.g. `"my_game"`) is what clients pass in the `create` message.
 
 ---
 
-## Client Side: React MultiScreen Client
+## Client Side: React Client
 
-Each game is a single `Multi_Screen/<GameName>_MP.jsx` file. No shared component library — each game is self-contained with inline styles.
+Each game is a single `client/games/<GameName>_MP.jsx` file. No shared component library — each game is self-contained with inline styles.
 
 ### Skeleton
 
@@ -289,7 +307,7 @@ function GameBoard({ game }) { /* Render game.gameState, handle actions */ }
 - **Inline CSS-in-JS styles** — each game defines its own `styles` object
 - **No external UI libraries** — just React + inline styles
 
-**⚠️ Critical: Guard against null `gameState` in `GameBoard`.** There is a race condition between the `game_started` and `game_state` WebSocket messages. When `game_started` arrives, the App component switches from `<Lobby>` to `<GameBoard>`, but `gameState` may still be `null` because the `game_state` message hasn't arrived yet. You must add a null guard — but **all React hooks (`useState`, `useEffect`, `useMemo`, etc.) must come before any early return** (React rules of hooks). The correct pattern:
+**Guard against null `gameState` in `GameBoard`.** There is a race condition between the `game_started` and `game_state` WebSocket messages. When `game_started` arrives, the App component switches from `<Lobby>` to `<GameBoard>`, but `gameState` may still be `null` because the `game_state` message hasn't arrived yet. You must add a null guard — but **all React hooks must come before any early return** (React rules of hooks). The correct pattern:
 ```jsx
 function GameBoard({ game }) {
   const { gameState: state, gameLogs, submitAction } = game;
@@ -298,35 +316,31 @@ function GameBoard({ game }) {
 
   // ALL hooks BEFORE any early return
   useEffect(() => { setSelection(null); }, [state?.current_player, state?.phase]);
-  useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [gameLogs]);
 
-  // NOW the guard — safe to return early after all hooks are called
+  // NOW the guard
   if (!state || !state.players) {
     return <div>Loading game...</div>;
   }
 
   // Safe to access state.players, state.board, etc.
-  const myIdx = getMyPlayerIdx(state);
-  // ...
 }
 ```
 
-### Swapping the Active Client
+### Adding a Game to the Menu
 
-Edit `Multi_Screen/main.jsx`:
+In `client/main.jsx`, add an import and a `GAMES` entry:
 ```jsx
-import App from "./MyGame_MP.jsx";
-```
+import MyGameApp from "./games/MyGame_MP.jsx";
 
-Only one game client can be active at a time (the build serves a single SPA).
+// In the GAMES array:
+{ id: "my_game", name: "My Game", players: "2–4", component: MyGameApp, series: "other", desc: "Short description" },
+```
 
 ---
 
 ## WebSocket Protocol Summary
 
-See `Multi_Screen/PROTOCOL.md` for the full spec. Key messages:
+See `client/PROTOCOL.md` for the full spec. Key messages:
 
 | Client → Server | Purpose |
 |---|---|
@@ -336,6 +350,10 @@ See `Multi_Screen/PROTOCOL.md` for the full spec. Key messages:
 | `{type: "reconnect", token: "..."}` | Reconnect |
 | `{type: "start"}` | Host starts game |
 | `{type: "action", action: {...}}` | Submit game action |
+| `{type: "list_rooms", game: "..."}` | Browse open rooms |
+| `{type: "spectate", room_code: "..."}` | Watch a game |
+| `{type: "kick", player_id: "..."}` | Host kicks player |
+| `{type: "lock_room"}` / `{type: "unlock_room"}` | Host locks/unlocks room |
 | `{type: "chat", message: "..."}` | Chat message |
 
 | Server → Client | Purpose |
@@ -347,6 +365,8 @@ See `Multi_Screen/PROTOCOL.md` for the full spec. Key messages:
 | `game_state` | Personalized state + valid_actions + phase_info |
 | `game_log` | Broadcast action log messages |
 | `game_over` | Game ended |
+| `room_list` | Available rooms for browsing |
+| `spectating` | Spectator mode confirmed |
 | `action_error` / `error` | Validation or protocol errors |
 
 ---
@@ -358,10 +378,10 @@ See `Multi_Screen/PROTOCOL.md` for the full spec. Key messages:
 python run_server.py
 
 # Start client (separate terminal)
-cd Multi_Screen && npm run dev
+cd client && npm run dev
 
-# Run tests (if they exist for your game)
-python -m pytest test_<game>.py -v
+# Run tests
+python -m pytest tests/ -v
 ```
 
 Server runs on `ws://localhost:8765`, client on `http://localhost:5173` (Vite default).
@@ -372,13 +392,9 @@ Server runs on `ws://localhost:8765`, client on `http://localhost:5173` (Vite de
 
 - [ ] `server/<game>/engine.py` — GameEngine subclass with all 6 methods
 - [ ] `server/<game>/state.py` — Constants and helpers
+- [ ] `server/<game>/__init__.py` — Empty init file
+- [ ] `server/<game>/rules/rules.pdf` — Rulebook (or .md/.txt)
 - [ ] Register in `server/server.py` `run_server()`
-- [ ] `Multi_Screen/<Game>_MP.jsx` — React client with useGameConnection hook
-- [ ] Update `Multi_Screen/main.jsx` import
+- [ ] `client/games/<Game>_MP.jsx` — React client with useGameConnection hook
+- [ ] Add to `GAMES` array in `client/main.jsx`
 - [ ] Test with 2+ browser tabs
-
-### Single-Screen First Approach
-
-If the game is complex, you can prototype in `Single_Screen/<Game>.jsx` first (hot-seat mode, no server needed). Then port to multiplayer by:
-1. Extracting game logic into the GameEngine subclass
-2. Building the MultiScreen client using the connection hook above
