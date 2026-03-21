@@ -86,20 +86,31 @@ function useGameConnection() {
     ws.onclose = () => { setConnected(false); setTimeout(() => { if (tokenRef.current) connect(); }, 2000); };
   }, []);
 
-  // Auto-reconnect from sessionStorage (when launched from main menu)
+  const createRoom = (name) => connect(() => send({ type: "create", game: "lyngk", name }));
+  const joinRoom = (code, name) => connect(() => send({ type: "join", room_code: code.toUpperCase(), name }));
+  const startGame = () => send({ type: "start" });
+  const submitAction = (action) => send({ type: "action", action });
+
+  // Auto-create/join from main menu (reads pending_action from sessionStorage)
   useEffect(() => {
-    const saved = sessionStorage.getItem("game_token");
-    if (saved && !tokenRef.current) {
-      tokenRef.current = saved;
-      connect();
+    const pending = sessionStorage.getItem("pending_action");
+    if (pending && !tokenRef.current) {
+      try {
+        const { roomCode, playerName } = JSON.parse(pending);
+        sessionStorage.removeItem("pending_action");
+        if (roomCode) {
+          joinRoom(roomCode, playerName);
+        } else {
+          createRoom(playerName);
+        }
+      } catch (e) {
+        sessionStorage.removeItem("pending_action");
+      }
     }
-  }, [connect]);
+  }, []);
 
   return { connected, roomCode, playerId, token, isHost, lobby, gameStarted, gameState, phaseInfo, yourTurn, waitingFor, gameLogs, gameOver, error,
-    createRoom: (name) => connect(() => send({ type: "create", game: "lyngk", name })),
-    joinRoom: (code, name) => connect(() => send({ type: "join", room_code: code.toUpperCase(), name })),
-    startGame: () => send({ type: "start" }),
-    submitAction: (action) => send({ type: "action", action }),
+    createRoom, joinRoom, startGame, submitAction,
   };
 }
 

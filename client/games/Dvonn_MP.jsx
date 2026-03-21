@@ -164,9 +164,12 @@ function useGameConnection() {
           setPlayerId(msg.player_id);
           setToken(msg.token);
           tokenRef.current = msg.token;
+          sessionStorage.setItem("game_token", msg.token);
           ws.send(JSON.stringify({ type: "auth", token: msg.token }));
           break;
         case "authenticated":
+          setRoomCode(msg.room_code);
+          setPlayerId(msg.player_id);
           setIsHost(msg.is_host);
           setGameStarted(msg.game_started);
           break;
@@ -212,6 +215,24 @@ function useGameConnection() {
   };
   const startGame = () => send({ type: "start" });
   const submitAction = (action) => send({ type: "action", action });
+
+  // Auto-create/join from main menu (reads pending_action from sessionStorage)
+  useEffect(() => {
+    const pending = sessionStorage.getItem("pending_action");
+    if (pending && !tokenRef.current) {
+      try {
+        const { roomCode, playerName } = JSON.parse(pending);
+        sessionStorage.removeItem("pending_action");
+        if (roomCode) {
+          joinRoom(roomCode, playerName);
+        } else {
+          createRoom(playerName);
+        }
+      } catch (e) {
+        sessionStorage.removeItem("pending_action");
+      }
+    }
+  }, []);
 
   return {
     connected, roomCode, playerId, token, isHost, lobby,

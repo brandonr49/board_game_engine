@@ -201,14 +201,6 @@ function useGameConnection() {
     ws.onerror = () => setError("Connection error");
   }, []);
 
-  // Auto-reconnect from sessionStorage (when launched from main menu)
-  useEffect(() => {
-    const saved = sessionStorage.getItem("game_token");
-    if (saved && !tokenRef.current) {
-      tokenRef.current = saved;
-      connect();
-    }
-  }, [connect]);
 
   const createRoom = useCallback((name) => {
     connect(() => {
@@ -225,6 +217,25 @@ function useGameConnection() {
       }, 100);
     });
   }, [connect]);
+
+
+  // Auto-create/join from main menu (reads pending_action from sessionStorage)
+  useEffect(() => {
+    const pending = sessionStorage.getItem("pending_action");
+    if (pending && !tokenRef.current) {
+      try {
+        const { roomCode, playerName } = JSON.parse(pending);
+        sessionStorage.removeItem("pending_action");
+        if (roomCode) {
+          joinRoom(roomCode, playerName);
+        } else {
+          createRoom(playerName);
+        }
+      } catch (e) {
+        sessionStorage.removeItem("pending_action");
+      }
+    }
+  }, []);
 
   const startGame = useCallback(() => {
     send({ type: "start" });

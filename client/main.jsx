@@ -224,80 +224,6 @@ function RoomBrowser({ gameId, gameName, onJoin, onSpectate, onBack }) {
   );
 }
 
-// ─── Connecting Bridge ────────────────────────────────
-// Opens a WebSocket, sends create/join, gets the token,
-// stores it in sessionStorage, then mounts the game component.
-// The game component's hook auto-reconnects from sessionStorage.
-function ConnectingBridge({ gameId, roomCode, playerName, GameComponent, onBack }) {
-  const [ready, setReady] = useState(false);
-  const [error, setError] = useState(null);
-  const attempted = useRef(false);
-
-  useEffect(() => {
-    if (attempted.current) return;
-    attempted.current = true;
-
-    const ws = new WebSocket(WS_URL);
-    ws.onopen = () => {
-      if (roomCode) {
-        // Join existing room
-        ws.send(JSON.stringify({ type: "join", room_code: roomCode, name: playerName }));
-      } else {
-        // Create new room
-        ws.send(JSON.stringify({ type: "create", game: gameId, name: playerName }));
-      }
-    };
-    ws.onmessage = (evt) => {
-      const msg = JSON.parse(evt.data);
-      if (msg.type === "created" || msg.type === "joined") {
-        // Store token — the game component's hook will pick this up
-        sessionStorage.setItem("game_token", msg.token);
-        ws.close();
-        setReady(true);
-      } else if (msg.type === "error") {
-        setError(msg.message);
-        ws.close();
-      }
-    };
-    ws.onerror = () => { setError("Connection failed"); ws.close(); };
-  }, [gameId, roomCode, playerName]);
-
-  if (error) {
-    return (
-      <div style={S.app}>
-        <div style={S.overlay} />
-        <div style={{ ...S.content, textAlign: "center", paddingTop: 80 }}>
-          <div style={{ color: "#e85d5d", fontSize: 18, marginBottom: 16 }}>{error}</div>
-          <button style={S.btn} onClick={onBack}>← Back</button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!ready) {
-    return (
-      <div style={S.app}>
-        <div style={S.overlay} />
-        <div style={{ ...S.content, textAlign: "center", paddingTop: 80 }}>
-          <div style={{ color: "#888", fontSize: 16 }}>Connecting...</div>
-        </div>
-      </div>
-    );
-  }
-
-  // Token is in sessionStorage — mount the game component.
-  // Its useGameConnection hook will read the token and auto-reconnect.
-  return (
-    <div>
-      <button style={S.backBtn} onClick={onBack}
-        onMouseEnter={e => { e.target.style.color = "#c9a84c"; e.target.style.borderColor = "#c9a84c"; }}
-        onMouseLeave={e => { e.target.style.color = "#888"; e.target.style.borderColor = "#30363d"; }}>
-        ← Games
-      </button>
-      <GameComponent />
-    </div>
-  );
-}
 
 // ─── Game Selector ─────────────────────────────────────
 function GameSelector({ onSelect }) {
@@ -335,6 +261,8 @@ function MainApp() {
 
   const handleBack = useCallback(() => {
     sessionStorage.removeItem("game_token");
+    sessionStorage.removeItem("pending_action");
+    sessionStorage.removeItem("pending_spectate");
     setSelectedGame(null);
     setGameMode(null);
     setJoinInfo(null);
@@ -355,6 +283,11 @@ function MainApp() {
         gameId={game.id}
         gameName={game.name}
         onJoin={(roomCode, playerName) => {
+          // Store intent for the game hook to auto-create/join on mount
+          sessionStorage.setItem("pending_action", JSON.stringify({
+            gameId: game.id, roomCode, playerName,
+          }));
+          sessionStorage.removeItem("game_token");
           setJoinInfo({ roomCode, playerName });
           setGameMode("playing");
         }}
@@ -369,20 +302,8 @@ function MainApp() {
     );
   }
 
-  // Playing — use the connecting bridge to create/join first
-  if (gameMode === "playing" && joinInfo) {
-    return (
-      <ConnectingBridge
-        gameId={game.id}
-        roomCode={joinInfo.roomCode}
-        playerName={joinInfo.playerName}
-        GameComponent={game.component}
-        onBack={handleBack}
-      />
-    );
-  }
-
-  // Spectating — render the game component directly (TODO: spectate flow)
+  // Playing or spectating — mount the game component directly.
+  // The game hook reads pending_action from sessionStorage to auto-create/join.
   const GameComponent = game.component;
   return (
     <div>
