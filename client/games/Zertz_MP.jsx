@@ -137,9 +137,9 @@ function useGameConnection() {
       switch (msg.type) {
         case "created": case "joined":
           setRoomCode(msg.room_code); setPlayerId(msg.player_id);
-          setToken(msg.token); tokenRef.current = msg.token;
+          setToken(msg.token); tokenRef.current = msg.token; sessionStorage.setItem("game_token", msg.token);
           ws.send(JSON.stringify({ type: "auth", token: msg.token })); break;
-        case "authenticated": setIsHost(msg.is_host); setGameStarted(msg.game_started); break;
+        case "authenticated": setRoomCode(msg.room_code); setPlayerId(msg.player_id); setIsHost(msg.is_host); setGameStarted(msg.game_started); break;
         case "lobby_update": setLobby(msg.players); if (msg.game_started !== undefined) setGameStarted(msg.game_started); break;
         case "game_started": setGameStarted(true); break;
         case "game_state": setGameState(msg.state); setPhaseInfo(msg.phase_info); setYourTurn(msg.your_turn); setWaitingFor(msg.waiting_for || []); break;
@@ -151,6 +151,15 @@ function useGameConnection() {
     };
     ws.onclose = () => { setConnected(false); setTimeout(() => { if (tokenRef.current) connect(); }, 2000); };
   }, []);
+
+  // Auto-reconnect from sessionStorage (when launched from main menu)
+  useEffect(() => {
+    const saved = sessionStorage.getItem("game_token");
+    if (saved && !tokenRef.current) {
+      tokenRef.current = saved;
+      connect();
+    }
+  }, [connect]);
 
   const createRoom = (name) => { connect(() => send({ type: "create", game: "zertz", name })); };
   const joinRoom = (code, name) => { connect(() => send({ type: "join", room_code: code.toUpperCase(), name })); };

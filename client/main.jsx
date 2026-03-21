@@ -134,9 +134,11 @@ function RoomBrowser({ gameId, gameName, onJoin, onSpectate, onBack }) {
         </div>
 
         {/* Action buttons */}
-        <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 24 }}>
+        <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 24, flexWrap: "wrap" }}>
           <button style={{ ...S.btn, ...S.btnP }} onClick={() => setMode("create")}>Create Room</button>
           <button style={S.btn} onClick={() => setMode("join_code")}>Join by Code</button>
+          <button style={{ ...S.btn, borderColor: "#555", color: "#999" }}
+            onClick={() => alert("Rules viewer coming soon!")}>Rules</button>
           <button style={{ ...S.btn, color: "#888" }} onClick={onBack}>← Back</button>
         </div>
 
@@ -222,6 +224,81 @@ function RoomBrowser({ gameId, gameName, onJoin, onSpectate, onBack }) {
   );
 }
 
+// ─── Connecting Bridge ────────────────────────────────
+// Opens a WebSocket, sends create/join, gets the token,
+// stores it in sessionStorage, then mounts the game component.
+// The game component's hook auto-reconnects from sessionStorage.
+function ConnectingBridge({ gameId, roomCode, playerName, GameComponent, onBack }) {
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState(null);
+  const attempted = useRef(false);
+
+  useEffect(() => {
+    if (attempted.current) return;
+    attempted.current = true;
+
+    const ws = new WebSocket(WS_URL);
+    ws.onopen = () => {
+      if (roomCode) {
+        // Join existing room
+        ws.send(JSON.stringify({ type: "join", room_code: roomCode, name: playerName }));
+      } else {
+        // Create new room
+        ws.send(JSON.stringify({ type: "create", game: gameId, name: playerName }));
+      }
+    };
+    ws.onmessage = (evt) => {
+      const msg = JSON.parse(evt.data);
+      if (msg.type === "created" || msg.type === "joined") {
+        // Store token — the game component's hook will pick this up
+        sessionStorage.setItem("game_token", msg.token);
+        ws.close();
+        setReady(true);
+      } else if (msg.type === "error") {
+        setError(msg.message);
+        ws.close();
+      }
+    };
+    ws.onerror = () => { setError("Connection failed"); ws.close(); };
+  }, [gameId, roomCode, playerName]);
+
+  if (error) {
+    return (
+      <div style={S.app}>
+        <div style={S.overlay} />
+        <div style={{ ...S.content, textAlign: "center", paddingTop: 80 }}>
+          <div style={{ color: "#e85d5d", fontSize: 18, marginBottom: 16 }}>{error}</div>
+          <button style={S.btn} onClick={onBack}>← Back</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!ready) {
+    return (
+      <div style={S.app}>
+        <div style={S.overlay} />
+        <div style={{ ...S.content, textAlign: "center", paddingTop: 80 }}>
+          <div style={{ color: "#888", fontSize: 16 }}>Connecting...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Token is in sessionStorage — mount the game component.
+  // Its useGameConnection hook will read the token and auto-reconnect.
+  return (
+    <div>
+      <button style={S.backBtn} onClick={onBack}
+        onMouseEnter={e => { e.target.style.color = "#c9a84c"; e.target.style.borderColor = "#c9a84c"; }}
+        onMouseLeave={e => { e.target.style.color = "#888"; e.target.style.borderColor = "#30363d"; }}>
+        ← Games
+      </button>
+      <GameComponent />
+    </div>
+  );
+}
+
 // ─── Game Selector ─────────────────────────────────────
 function GameSelector({ onSelect }) {
   const gipfGames = GAMES.filter(g => g.series === "gipf");
@@ -254,10 +331,13 @@ function GameSelector({ onSelect }) {
 function MainApp() {
   const [selectedGame, setSelectedGame] = useState(null);
   const [gameMode, setGameMode] = useState(null); // null | "browse" | "playing" | "spectating"
+  const [joinInfo, setJoinInfo] = useState(null); // { roomCode, playerName }
 
   const handleBack = useCallback(() => {
+    sessionStorage.removeItem("game_token");
     setSelectedGame(null);
     setGameMode(null);
+    setJoinInfo(null);
   }, []);
 
   // Game selector
@@ -275,11 +355,7 @@ function MainApp() {
         gameId={game.id}
         gameName={game.name}
         onJoin={(roomCode, playerName) => {
-          // Store join info and launch game component
-          // The game component will handle create/join via its own hook
-          sessionStorage.setItem("pending_join", JSON.stringify({
-            gameId: game.id, roomCode, playerName,
-          }));
+          setJoinInfo({ roomCode, playerName });
           setGameMode("playing");
         }}
         onSpectate={(roomCode) => {
@@ -293,7 +369,20 @@ function MainApp() {
     );
   }
 
-  // Playing or spectating — render the game component
+  // Playing — use the connecting bridge to create/join first
+  if (gameMode === "playing" && joinInfo) {
+    return (
+      <ConnectingBridge
+        gameId={game.id}
+        roomCode={joinInfo.roomCode}
+        playerName={joinInfo.playerName}
+        GameComponent={game.component}
+        onBack={handleBack}
+      />
+    );
+  }
+
+  // Spectating — render the game component directly (TODO: spectate flow)
   const GameComponent = game.component;
   return (
     <div>

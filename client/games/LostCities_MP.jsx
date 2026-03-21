@@ -127,9 +127,12 @@ function useGameConnection() {
           setPlayerId(msg.player_id);
           setToken(msg.token);
           tokenRef.current = msg.token;
+          sessionStorage.setItem("game_token", msg.token);
           ws.send(JSON.stringify({ type: "auth", token: msg.token }));
           break;
         case "authenticated":
+          setRoomCode(msg.room_code);
+          setPlayerId(msg.player_id);
           setIsHost(msg.is_host);
           setGameStarted(msg.game_started);
           break;
@@ -166,6 +169,15 @@ function useGameConnection() {
       setTimeout(() => { if (tokenRef.current) connect(); }, 2000);
     };
   }, []);
+
+  // Auto-reconnect from sessionStorage (when launched from main menu)
+  useEffect(() => {
+    const saved = sessionStorage.getItem("game_token");
+    if (saved && !tokenRef.current) {
+      tokenRef.current = saved;
+      connect();
+    }
+  }, [connect]);
 
   const createRoom = (name) => {
     connect(() => send({ type: "create", game: "lostcities", name }));
